@@ -1,5 +1,7 @@
 ﻿namespace RpcClientSdk
 {
+    using RpcNetSdk;
+
     public readonly partial struct ResponseStatus(ushort code)
     {
         public static readonly ushort Ok = 200;

@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="DotNext.Threading" Version="5.17.2" />
     <PackageReference Include="OneOf" Version="3.0.271" />
     <PackageReference Include="UniTask" Version="2.5.10" />
   </ItemGroup>

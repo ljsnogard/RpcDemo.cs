@@ -7,7 +7,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ServerDemo", "ServerDemo\Se
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ClientDemo", "ClientDemo\ClientDemo.csproj", "{AFD92236-A851-4750-AA84-AC714BA09571}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RpcClientSdk", "RpcSdk\RpcClientSdk.csproj", "{BF9479FE-7FD1-4562-B575-CDACD54766D9}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RpcClientSdk", "RpcClientSdk\RpcClientSdk.csproj", "{BF9479FE-7FD1-4562-B575-CDACD54766D9}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GameRpc", "GameRpc\GameRpc.csproj", "{6504574E-B50C-438A-84FA-2C93B597621F}"
 EndProject

@@ -3,6 +3,8 @@
     using Cysharp.Threading.Tasks;
     using OneOf;
 
+    using RpcNetSdk;
+
     public readonly struct StreamStatus(byte code)
     {
         public readonly byte Code = code;

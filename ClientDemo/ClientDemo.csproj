@@ -9,7 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\GameRpc\GameRpc.csproj" />
-    <ProjectReference Include="..\RpcSdk\RpcClientSdk.csproj" />
+    <ProjectReference Include="..\RpcClientSdk\RpcClientSdk.csproj" />
   </ItemGroup>
 
 </Project>
