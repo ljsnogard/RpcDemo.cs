@@ -11,9 +11,4 @@
     <PackageReference Include="UniTask" Version="2.5.10" />
   </ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\BufferKit\BufferKit.csproj" />
-    <ProjectReference Include="..\RpcNetSdk\RpcNetSdk.csproj" />
-  </ItemGroup>
-
 </Project>

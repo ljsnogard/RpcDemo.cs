@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\BufferKit\BufferKit.csproj" />
     <ProjectReference Include="..\GameRpc\GameRpc.csproj" />
     <ProjectReference Include="..\RpcClientSdk\RpcClientSdk.csproj" />
   </ItemGroup>

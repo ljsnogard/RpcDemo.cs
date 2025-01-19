@@ -1,5 +1,7 @@
 ﻿namespace RpcClientSdk
 {
+    using BufferKit;
+
     using RpcNetSdk;
 
     public readonly partial struct ResponseStatus(ushort code)
@@ -19,8 +21,8 @@
     {
         public ResponseStatus Status { get; init; }
 
-        public IAsyncEnumerable<(string, BuffRx)> Headers { get; init; }
+        public IAsyncEnumerable<HeaderRx> Headers { get; init; }
 
-        public BuffRx Payload { get; init; }
+        public BuffRx<byte> Payload { get; init; }
     }
 }

@@ -1,9 +1,12 @@
 ﻿namespace RpcClientSdk
 {
     using Cysharp.Threading.Tasks;
+
     using OneOf;
 
     using RpcNetSdk;
+
+    using BufferKit;
 
     public readonly struct StreamStatus(byte code)
     {
@@ -20,12 +23,12 @@
         /// <summary>
         /// 推送数据包的头部
         /// </summary>
-        public IAsyncEnumerable<(string, BuffRx)> Headers { get; init; }
+        public IAsyncEnumerable<HeaderRx> Headers { get; init; }
 
         /// <summary>
         /// 推送数据包的主体数据
         /// </summary>
-        public BuffRx Payload { get; init; }
+        public BuffTx<byte> Payload { get; init; }
     }
 
     public readonly struct PullError

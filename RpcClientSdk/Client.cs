@@ -5,6 +5,7 @@
     using OneOf;
 
     using RpcNetSdk;
+    using BufferKit;
 
     public readonly struct ClientError
     {
@@ -22,8 +23,8 @@
         /// <returns></returns>
         public UniTask<OneOf<Response, ClientError>> Request
             ( Uri location
-            , IAsyncEnumerable<(string, BuffRx)> headers
-            , BuffRx payload)
+            , IAsyncEnumerable<HeaderRx> headers
+            , BuffRx<byte> payload)
         {
             throw new NotImplementedException();
         }

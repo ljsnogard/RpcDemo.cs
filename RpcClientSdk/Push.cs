@@ -1,5 +1,7 @@
 ﻿namespace RpcClientSdk
 {
+    using BufferKit;
+
     using Cysharp.Threading.Tasks;
 
     using OneOf;
@@ -15,8 +17,8 @@
         public Uri Location { get; }
 
         public UniTask<OneOf<PushError, None>> SendItemAsync
-            (IAsyncEnumerable<(string, BuffRx)> headers
-            , BuffRx payload
+            ( IAsyncEnumerable<HeaderRx> headers
+            , BuffRx<byte> payloadReader
             , CancellationToken token = default);
     }
 }
