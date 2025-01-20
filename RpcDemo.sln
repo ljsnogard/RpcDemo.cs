@@ -17,6 +17,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RpcServerSdk", "RpcServerSd
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BufferKit", "BufferKit\BufferKit.csproj", "{78B50EFB-FE7E-4392-987C-8BD785C89C03}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BufferKit.xUnit.Test", "BufferKit.xUnit.Test\BufferKit.xUnit.Test.csproj", "{482C731F-69D8-4C15-9B31-4D116B06C747}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -51,6 +53,10 @@ Global
 		{78B50EFB-FE7E-4392-987C-8BD785C89C03}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{78B50EFB-FE7E-4392-987C-8BD785C89C03}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{78B50EFB-FE7E-4392-987C-8BD785C89C03}.Release|Any CPU.Build.0 = Release|Any CPU
+		{482C731F-69D8-4C15-9B31-4D116B06C747}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{482C731F-69D8-4C15-9B31-4D116B06C747}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{482C731F-69D8-4C15-9B31-4D116B06C747}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{482C731F-69D8-4C15-9B31-4D116B06C747}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

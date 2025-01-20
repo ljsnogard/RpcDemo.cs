@@ -7,7 +7,7 @@
 
     using OneOf;
 
-    internal readonly struct SliceInfo
+    internal readonly struct BorrowInfo
     {
         public uint Offset { get; init; }
         public uint Length { get; init; }
@@ -16,7 +16,7 @@
     internal readonly struct Demand
     {
         public uint Amount { get; init; }
-        public TaskCompletionSource<SliceInfo> Signal { get; init; }
+        public TaskCompletionSource<BorrowInfo> Signal { get; init; }
     }
 
     public readonly struct RingBufferError : IBufferError
@@ -25,6 +25,8 @@
 
         private RingBufferError(uint code)
             => this.code_ = code;
+
+        public static readonly ReadOnlyMemory<string> NAMES = new ReadOnlyMemory<string>(["Idle", "Closed"]);
 
         internal static readonly RingBufferError Idle = new RingBufferError(0);
 
@@ -35,6 +37,9 @@
 
         public static bool operator !=(RingBufferError lhs, RingBufferError rhs)
             => lhs.code_ != rhs.code_;
+
+        public override string ToString()
+            => $"RingBufferError.{NAMES.Span[(int)this.code_]}";
 
         public override bool Equals([NotNullWhen(true)] object? obj)
         {
@@ -52,9 +57,9 @@
     {
         private readonly T[] memory_;
 
-        private readonly ReaderWriterLockSlim txRwlock_;
+        private readonly SemaphoreSlim txSema_;
 
-        private readonly ReaderWriterLockSlim rxRwlock_;
+        private readonly SemaphoreSlim rxSema_;
 
         private OneOf<Demand, RingBufferError> txDemand_;
 
@@ -83,8 +88,8 @@
         public RingBuffer(uint capacity)
         {
             this.memory_ = new T[(int)capacity];
-            this.txRwlock_ = new ReaderWriterLockSlim();
-            this.rxRwlock_ = new ReaderWriterLockSlim();
+            this.txSema_ = new SemaphoreSlim(1, 1);
+            this.rxSema_ = new SemaphoreSlim(1, 1);
             this.txDemand_ = RingBufferError.Idle;
             this.rxDemand_ = RingBufferError.Idle;
             this.capacity_ = capacity;
@@ -93,12 +98,13 @@
             this.inversed_ = false;
         }
 
-        public uint Capacity => this.capacity_;
+        public uint Capacity
+            => this.capacity_;
 
         /// <summary>
         /// 可供写者填充的数据量
         /// </summary>
-        public uint WriterSize
+        internal uint WriterSize
         {
             get
             {
@@ -112,7 +118,7 @@
         /// <summary>
         /// 可供读者消费的数据量
         /// </summary>
-        public uint ReaderSize
+        internal uint ReaderSize
         {
             get
             {
@@ -129,8 +135,19 @@
         /// <param name="length"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public UniTask<OneOf<BuffSegmRef<T>, RingBufferError>> ReadAsync(uint length, CancellationToken token = default)
-            => throw new NotImplementedException();
+        public async UniTask<OneOf<BuffSegmRef<T>, RingBufferError>> ReadAsync(uint length, CancellationToken token = default)
+        {
+            try
+            {
+                await this.rxSema_.WaitAsync(token);
+                throw new NotImplementedException();
+            }
+            finally
+            {
+                if (this.rxSema_.CurrentCount == 0)
+                    this.rxSema_.Release();
+            }
+        }
 
         /// <summary>
         /// 从内部缓冲区中借出一段未填充缓存，该缓存长度不小于给定的长度；如果执行完成，则返回该未填充缓存
@@ -161,16 +178,30 @@
             }
         }
 
-        UniTask<OneOf<BuffSegmRef<T>, IBufferError>> IBuffer<T>.ReadAsync(uint length, CancellationToken token)
-            => throw new NotImplementedException();
+        async UniTask<OneOf<BuffSegmRef<T>, IBufferError>> IBuffer<T>.ReadAsync(uint length, CancellationToken token)
+        {
+            var r = await this.ReadAsync(length, token);
+            return r.MapT1((e) => (IBufferError)e);
+        }
 
-        UniTask<OneOf<BuffSegmMut<T>, IBufferError>> IBuffer<T>.WriteAsync(uint length, CancellationToken token)
-            => throw new NotImplementedException();
+        async UniTask<OneOf<BuffSegmMut<T>, IBufferError>> IBuffer<T>.WriteAsync(uint length, CancellationToken token)
+        {
+            var r = await this.WriteAsync(length, token);
+            return r.MapT1((e) => (IBufferError)e);
+        }
 
         void IBufferInternal<T>.TrySetRxClosed()
             => throw new NotImplementedException();
 
         void IBufferInternal<T>.TrySetTxClosed()
+            => throw new NotImplementedException();
+    }
+
+    internal readonly struct RingBuffReclaimRef<T>: IReclaimRef<T>
+    {
+        private readonly RingBuffer<T> buffer_;
+
+        public void Reclaim(ReadOnlyMemory<T> mem)
             => throw new NotImplementedException();
     }
 }

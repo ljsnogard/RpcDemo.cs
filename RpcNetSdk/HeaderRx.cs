@@ -17,6 +17,8 @@
             yield break;
         }
 
+        public static readonly NoHeaders Instance = new NoHeaders();
+
         public IAsyncEnumerator<HeaderRx> GetAsyncEnumerator(CancellationToken token = default)
             => YieldNothing().GetAsyncEnumerator(token);
     }

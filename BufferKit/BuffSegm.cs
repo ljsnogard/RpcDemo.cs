@@ -1,20 +1,22 @@
 ﻿namespace BufferKit
 {
-    using OneOf;
+    using System.Diagnostics.CodeAnalysis; // to use [NotNullWhen()] for override object.Equals
 
-    using System.Diagnostics.CodeAnalysis;
+    using Cysharp.Threading.Tasks;
+
+    using OneOf;
 
     public interface IReclaim<T>
     { }
 
     public interface IReclaimRef<T>: IReclaim<T>
     {
-        public void Reclaim(ReadOnlyMemory<T> mem, uint offset);
+        public void Reclaim(ReadOnlyMemory<T> mem);
     }
 
     public interface IReclaimMut<T>: IReclaim<T>
     {
-        public void Reclaim(Memory<T> mem, uint offset);
+        public void Reclaim(Memory<T> mem);
     }
 
     #region IBuffSegm variants
@@ -24,12 +26,12 @@
 
     internal interface IBuffSegmRef<T>: IBuffSegm<T>
     {
-        public void Forward(ReadOnlyMemory<T> memory, uint length);
+        public void Forward(uint length);
     }
 
     internal interface IBuffSegmMut<T>: IBuffSegm<T>
     {
-        public void Forward(Memory<T> memory, uint length);
+        public void Forward(uint length);
     }
 
     #endregion
@@ -73,72 +75,44 @@
 
     public sealed class BuffSegmRef<T>: IBuffSegmRef<T>, IDisposable
     {
-        private OneOf<ReadOnlyMemory<T>, BuffSegmError> memory_;
+        private readonly ReadOnlyMemory<T> memory_;
 
         private IReclaimRef<T>? reclaim_;
 
         private uint offset_;
 
-        private readonly uint length_;
-
-        public BuffSegmRef(ReadOnlyMemory<T> memory) : this(new NoReclaim<T>(), memory)
+        public BuffSegmRef(ReadOnlyMemory<T> memory) : this(new NoReclaim<T>(), memory, 0)
         { }
 
-        public BuffSegmRef(IReclaimRef<T> reclaim, ReadOnlyMemory<T> memory) : this(reclaim, memory, 0, (uint)memory.Length)
-        { }
-
-        private BuffSegmRef(IReclaimRef<T> reclaim, ReadOnlyMemory<T> memory, uint offset, uint length)
+        private BuffSegmRef(IReclaimRef<T> reclaim, ReadOnlyMemory<T> memory, uint offset)
         {
             this.reclaim_ = reclaim;
             this.memory_ = memory;
             this.offset_ = offset;
-            this.length_ = length;
         }
 
         public uint Length
-            => this.length_;
+            => (uint)this.ReadOnlyMemory.Length;
 
         public ReadOnlyMemory<T> ReadOnlyMemory
-        {
-            get
-            {
-                if (!this.memory_.TryPickT0(out var memory, out var error))
-                    throw error.CreateException();
-                else
-                    return memory.Slice((int)this.offset_, (int)this.length_);
-            }
-        }
+            => this.memory_.Slice((int)this.offset_);
 
         public OneOf<BuffSegmRef<T>, BuffSegmError> BorrowSlice(uint length)
         {
-            if (!this.memory_.TryPickT0(out var memory, out var _))
-                return BuffSegmError.Borrowed;
-
-            uint borrowLength;
-            if (length > this.length_)
-                return BuffSegmError.Insufficient;
-            else
-                borrowLength = length;
-
+            uint borrowLength = Math.Min(this.Length, length);
             var reclaim = new ReclaimBuffSegm<T>(this);
-            this.memory_ = BuffSegmError.Borrowed;
-
-            return new BuffSegmRef<T>(reclaim, memory, this.offset_, borrowLength);
+            var memory = this.memory_.Slice((int)this.offset_, (int)borrowLength);
+            return new BuffSegmRef<T>(reclaim, memory, 0);
         }
 
-        void IBuffSegmRef<T>.Forward(ReadOnlyMemory<T> memory, uint length)
-        {
-            this.memory_ = memory;
-            this.offset_ += length;
-        }
+        void IBuffSegmRef<T>.Forward(uint length)
+            => this.offset_ += length;
+        
 
         void IDisposable.Dispose()
         {
-            if (!this.memory_.TryPickT0(out var memory, out var error))
-                throw error.CreateException();
-
             if (this.reclaim_ is IReclaimRef<T> reclaim)
-                reclaim.Reclaim(memory, this.offset_);
+                reclaim.Reclaim(this.memory_);
 
             this.reclaim_ = null;
         }
@@ -146,72 +120,46 @@
 
     public sealed class BuffSegmMut<T>: IBuffSegmMut<T>, IDisposable
     {
-        private OneOf<Memory<T>, BuffSegmError> memory_;
+        private readonly Memory<T> memory_;
 
         private IReclaimMut<T>? reclaim_;
 
         private uint offset_;
 
-        private readonly uint length_;
-
         public BuffSegmMut(Memory<T> memory) : this(new NoReclaim<T>(), memory)
         { }
 
-        public BuffSegmMut(IReclaimMut<T> reclaim, Memory<T> memory) : this(reclaim, memory, 0, (uint)memory.Length)
+        public BuffSegmMut(IReclaimMut<T> reclaim, Memory<T> memory) : this(reclaim, memory, 0)
         { }
 
-        private BuffSegmMut(IReclaimMut<T> reclaim, Memory<T> memory, uint offset, uint length)
+        private BuffSegmMut(IReclaimMut<T> reclaim, Memory<T> memory, uint offset)
         {
             this.reclaim_ = reclaim;
             this.memory_ = memory;
             this.offset_ = offset;
-            this.length_ = length;
         }
 
         public uint Length
-            => this.length_;
+            => (uint)this.Memory.Length;
 
         public Memory<T> Memory
-        {
-            get
-            {
-                if (!this.memory_.TryPickT0(out var memory, out var error))
-                    throw error.CreateException();
-                else
-                    return memory.Slice((int)this.offset_, (int)this.length_);
-            }
-        }
+            => this.memory_.Slice((int)this.offset_);
 
         public OneOf<BuffSegmMut<T>, BuffSegmError> BorrowSlice(uint length)
         {
-            if (!this.memory_.TryPickT0(out var memory, out var _))
-                return BuffSegmError.Borrowed;
-
-            uint borrowLength;
-            if (length > this.length_)
-                return BuffSegmError.Insufficient;
-            else
-                borrowLength = length;
-
+            uint borrowLength = Math.Min(this.Length, length);
             var reclaim = new ReclaimBuffSegm<T>(this);
-            this.memory_ = BuffSegmError.Borrowed;
-
-            return new BuffSegmMut<T>(reclaim, memory, this.offset_, borrowLength);
+            var memory = this.memory_.Slice((int)this.offset_, (int)borrowLength);
+            return new BuffSegmMut<T>(reclaim, memory, 0);
         }
 
-        void IBuffSegmMut<T>.Forward(Memory<T> memory, uint length)
-        {
-            this.memory_ = memory;
-            this.offset_ += length;
-        }
+        void IBuffSegmMut<T>.Forward(uint length)
+            => this.offset_ += length;
 
         void IDisposable.Dispose()
         {
-            if (!this.memory_.TryPickT0(out var memory, out var error))
-                throw error.CreateException();
-
             if (this.reclaim_ is IReclaimMut<T> reclaim)
-                reclaim.Reclaim(memory, this.offset_);
+                reclaim.Reclaim(this.memory_);
 
             this.reclaim_ = null;
         }
@@ -219,13 +167,19 @@
 
     internal readonly struct NoReclaim<T>: IReclaimRef<T>, IReclaimMut<T>
     {
-        public void Reclaim(ReadOnlyMemory<T> mem, uint offset)
-        { }
+        public void Reclaim(ReadOnlyMemory<T> mem)
+            => DoNothing();
 
-        public void Reclaim(Memory<T> mem, uint offset)
-        { }
+        public void Reclaim(Memory<T> mem)
+            => DoNothing();
+
+        private static void DoNothing() { }
     }
 
+    /// <summary>
+    /// 用于为子串提供
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
     internal readonly struct ReclaimBuffSegm<T>: IReclaimRef<T>, IReclaimMut<T>
     {
         private readonly IBuffSegm<T> source_;
@@ -233,29 +187,29 @@
         public ReclaimBuffSegm(IBuffSegm<T> source)
             => this.source_ = source;
 
-        public void Reclaim(ReadOnlyMemory<T> mem, uint offset)
+        public void Reclaim(ReadOnlyMemory<T> mem)
         {
             if (this.source_ is IBuffSegmRef<T> source)
-                source.Forward(mem, offset);
+                source.Forward((uint)mem.Length);
             else
                 throw this.source_.UnexpectedTypeException();
         }
 
-        public void Reclaim(Memory<T> mem, uint offset)
-        { 
+        public void Reclaim(Memory<T> mem)
+        {
             if (this.source_ is IBuffSegmMut<T> source)
-                source.Forward(mem, offset);
+                source.Forward((uint)mem.Length);
             else
                 throw this.source_.UnexpectedTypeException();
         }
     }
 
-    internal static class BuffSegmThrowExtension
+    public static class BuffSegmThrowExtension
     {
         public static Exception CreateException(in this BuffSegmError error)
             => new Exception($"{error}");
 
-        public static Exception UnexpectedTypeException<T>(this IBuffSegm<T> segm)
+        internal static Exception UnexpectedTypeException<T>(this IBuffSegm<T> segm)
             => new Exception($"Unexpected source type({segm.GetType()})");
     }
 }

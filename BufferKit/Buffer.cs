@@ -53,14 +53,25 @@
     /// <typeparam name="E">缓冲区的错误类型</typeparam>
     public struct BuffTx<T> : IDisposable
     {
-        private readonly IBufferInternal<T> buff_;
+        private IBufferInternal<T>? buff_;
 
-        private readonly bool shouldCloseOnDispose;
+        private readonly bool shouldCloseOnDispose_;
 
         internal BuffTx(IBufferInternal<T> buffer, bool shouldCloseOnDispose = true)
         {
             this.buff_ = buffer;
-            this.shouldCloseOnDispose = shouldCloseOnDispose;
+            this.shouldCloseOnDispose_ = shouldCloseOnDispose;
+        }
+
+        public readonly bool IsRxClosed
+        {
+            get
+            {
+                if (this.buff_ is IBufferInternal<T> buff)
+                    return buff.IsRxClosed;
+                else
+                    throw CreateObjectDisposedException();
+            }
         }
 
         /// <summary>
@@ -69,8 +80,13 @@
         /// <param name="length"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public UniTask<OneOf<BuffSegmMut<T>, IBufferError>> WriteAsync(uint length, CancellationToken token = default)
-            => this.buff_.WriteAsync(length, token);
+        public readonly UniTask<OneOf<BuffSegmMut<T>, IBufferError>> WriteAsync(uint length, CancellationToken token = default)
+        {
+            if (this.buff_ is IBufferInternal<T> buff)
+                return buff.WriteAsync(length, token);
+            else
+                throw CreateObjectDisposedException();
+        }
 
         /// <summary>
         /// 将外部缓存中的数据以复制的方式填充到内部缓存中，并返回已复制的长度
@@ -78,19 +94,22 @@
         /// <param name="source"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public async UniTask<OneOf<uint, BuffTxError>> WriteAsync(ReadOnlyMemory<T> source, CancellationToken token = default)
+        public readonly async UniTask<OneOf<uint, BuffTxError>> WriteAsync(ReadOnlyMemory<T> source, CancellationToken token = default)
         {
+            if (this.buff_ is not IBufferInternal<T> buffer)
+                throw CreateObjectDisposedException();
+
             uint filledCounut = 0;
             uint sourceLength = (uint)source.Length;
             while (filledCounut < sourceLength)
             {
                 var unfilledLength = sourceLength - filledCounut;
-                var maybeBuff = await this.buff_.WriteAsync(unfilledLength, token);
-                if (!maybeBuff.TryPickT0(out var buff, out var writerErr))
+                var maybeBuff = await buffer.WriteAsync(unfilledLength, token);
+                if (!maybeBuff.TryPickT0(out var txBuff, out var writerErr))
                     throw writerErr.CreateException();
 
-                var unfilledSource = source.Slice((int)filledCounut, (int)buff.Length);
-                var maybeSlice = buff.BorrowSlice(unfilledLength);
+                var unfilledSource = source.Slice((int)filledCounut, (int)txBuff.Length);
+                var maybeSlice = txBuff.BorrowSlice(unfilledLength);
                 if (!maybeSlice.TryPickT0(out var slice, out var segmErr))                
                     return new BuffTxError { InnerError = segmErr };
                 
@@ -105,7 +124,15 @@
         }
 
         void IDisposable.Dispose()
-            => throw new NotImplementedException();
+        {
+            if (!this.shouldCloseOnDispose_)
+                return;
+            if (this.buff_ is IBufferInternal<T> buff)
+                buff.TrySetTxClosed();
+        }
+
+        static ObjectDisposedException CreateObjectDisposedException()
+            => new ObjectDisposedException(typeof(BuffTx<T>).ToString());
     }
 
     /// <summary>
@@ -114,7 +141,7 @@
     /// <typeparam name="T">缓冲区的数据单元类型</typeparam>
     public struct BuffRx<T> : IDisposable
     {
-        private readonly IBufferInternal<T> buff_;
+        private IBufferInternal<T>? buff_;
 
         private readonly bool shouldCloseOnDispose_;
 
@@ -130,8 +157,13 @@
         /// <param name="length"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public UniTask<OneOf<BuffSegmRef<T>, IBufferError>> ReadAsync(uint length, CancellationToken token = default)
-            => this.buff_.ReadAsync(length, token);
+        public readonly UniTask<OneOf<BuffSegmRef<T>, IBufferError>> ReadAsync(uint length, CancellationToken token = default)
+        {
+            if (this.buff_ is IBufferInternal<T> buff)
+                return buff.ReadAsync(length, token);
+            else
+                throw CreateObjectDisposedException();
+        }
 
         /// <summary>
         /// 将已缓存数据以复制的方式填充到指定的外部缓存，并返回已复制的长度
@@ -141,17 +173,20 @@
         /// <returns></returns>
         public async UniTask<OneOf<uint, BuffTxError>> ReadAsync(Memory<T> target, CancellationToken token = default)
         {
+            if (this.buff_ is not IBufferInternal<T> buffer)
+                throw CreateObjectDisposedException();
+
             uint filledCounut = 0;
             uint targetLength = (uint)target.Length;
             while (filledCounut < targetLength)
             {
                 var unfilledLength = targetLength - filledCounut;
-                var maybeBuff = await this.buff_.ReadAsync(unfilledLength, token);
-                if (!maybeBuff.TryPickT0(out var buff, out var readerErr))
+                var maybeBuff = await buffer.ReadAsync(unfilledLength, token);
+                if (!maybeBuff.TryPickT0(out var rxBuff, out var readerErr))
                     throw readerErr.CreateException();
 
-                var unfilledTarget = target.Slice((int)filledCounut, (int)buff.Length);
-                var maybeSlice = buff.BorrowSlice(unfilledLength);
+                var unfilledTarget = target.Slice((int)filledCounut, (int)rxBuff.Length);
+                var maybeSlice = rxBuff.BorrowSlice(unfilledLength);
                 if (!maybeSlice.TryPickT0(out var slice, out var segmErr))
                     return new BuffTxError { InnerError = segmErr };
 
@@ -167,7 +202,15 @@
         }
 
         void IDisposable.Dispose()
-            => throw new NotImplementedException();
+        {
+            if (!this.shouldCloseOnDispose_)
+                return;
+            if (this.buff_ is IBufferInternal<T> buff)
+                buff.TrySetRxClosed();
+        }
+
+        static ObjectDisposedException CreateObjectDisposedException()
+            => new ObjectDisposedException(typeof(BuffTx<T>).ToString());
     }
 
     internal static class BuffErrorExt
