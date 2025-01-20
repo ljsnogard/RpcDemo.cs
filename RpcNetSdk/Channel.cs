@@ -39,10 +39,10 @@
         internal BuffTx<byte> RxWriter
             => throw new NotImplementedException();
 
-        public Channel()
+        public Channel(uint txBuffSize, uint rxBuffSize)
         {
-            this.tx_ = new RingBuffer<byte>(new byte[Connection.MAX_PACKET_SIZE * 2]);
-            this.rx_ = new RingBuffer<byte>(new byte[Connection.MAX_PACKET_SIZE * 2]);
+            this.tx_ = new RingBuffer<byte>(txBuffSize);
+            this.rx_ = new RingBuffer<byte>(rxBuffSize);
         }
 
         public UniTask<OneOf<uint, ConnectionError>> SendAsync(BuffRx<byte> data, CancellationToken token = default)
