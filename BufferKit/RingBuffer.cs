@@ -55,7 +55,7 @@
 
     public sealed class RingBuffer<T> : IBufferInternal<T>
     {
-        private readonly T[] memory_;
+        private readonly Memory<T> memory_;
 
         private readonly SemaphoreSlim txSema_;
 
@@ -85,14 +85,14 @@
         /// </summary>
         private bool inversed_;
 
-        public RingBuffer(uint capacity)
+        public RingBuffer(Memory<T> memory)
         {
-            this.memory_ = new T[(int)capacity];
+            this.memory_ = memory;
             this.txSema_ = new SemaphoreSlim(1, 1);
             this.rxSema_ = new SemaphoreSlim(1, 1);
             this.txDemand_ = RingBufferError.Idle;
             this.rxDemand_ = RingBufferError.Idle;
-            this.capacity_ = capacity;
+            this.capacity_ = (uint)memory.Length;
             this.txPos_ = 0;
             this.rxPos_ = 0;
             this.inversed_ = false;

@@ -92,9 +92,9 @@
         }
 
         public uint Length
-            => (uint)this.ReadOnlyMemory.Length;
+            => (uint)this.Memory.Length;
 
-        public ReadOnlyMemory<T> ReadOnlyMemory
+        public ReadOnlyMemory<T> Memory
             => this.memory_.Slice((int)this.offset_);
 
         public OneOf<BuffSegmRef<T>, BuffSegmError> BorrowSlice(uint length)

@@ -193,7 +193,7 @@
                 using (slice)
                 {
                     for (var i = 0; i < unfilledTarget.Length; ++i)
-                        unfilledTarget.Span[i] = slice.ReadOnlyMemory.Span[i];
+                        unfilledTarget.Span[i] = slice.Memory.Span[i];
 
                     filledCounut += unfilledLength;
                 }

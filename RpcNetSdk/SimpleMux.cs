@@ -16,7 +16,7 @@
     /// <summary>
     /// 用于在一个全双工可靠传输信道上同时进行多个活动会话的连接
     /// </summary>
-    public sealed class Connection
+    public sealed class SimpleMux
     {
         /// <summary>
         /// 为了简化问题作出的每个数据包最大长度限制，会话数据缓冲会参考这个数值
@@ -34,39 +34,27 @@
         private readonly RingBuffer<byte> rx_;
 
         /// <summary>
-        /// 已连接的 channel
+        /// Local Port Keyed dictionary
         /// </summary>
-        private readonly SortedDictionary<ChannelId, Channel> activeChannels_;
+        private readonly SortedDictionary<ushort, OneOf<Channel, Hub>> localPortsDict_;
 
         /// <summary>
-        /// 半连接的 channel 
+        /// 闲置 port 的先进先出队列，用于重用
         /// </summary>
-        private readonly SortedDictionary<ChannelId, Channel> pendingChannels_;
-
-        /// <summary>
-        /// 闲置 port 的先进先出队列，用于会话号重用
-        /// </summary>
-        private readonly List<ushort> portsQueue_;
+        private readonly List<ushort> localPortsQueue_;
 
         /// <summary>
         /// 当前连接中使用到的最大的 port
         /// </summary>
         private readonly Atomic<ushort> maxPort_;
 
-        public Connection(RingBuffer<byte> tx, RingBuffer<byte> rx)
+        public SimpleMux(RingBuffer<byte> tx, RingBuffer<byte> rx)
         {
             this.tx_ = tx;
             this.rx_ = rx;
-            this.activeChannels_ = new SortedDictionary<ChannelId, Channel>();
-            this.pendingChannels_ = new SortedDictionary<ChannelId, Channel>();
-            this.portsQueue_ = new List<ushort>();
+            this.localPortsDict_ = new SortedDictionary<ushort, OneOf<Channel, Hub>>();
+            this.localPortsQueue_ = new List<ushort>();
             this.maxPort_ = new Atomic<ushort>();
-        }
-
-        public async UniTask<OneOf<Channel, ConnectionError>> GetChannelAsync(ushort port, CancellationToken token = default)
-        {
-            using var readLockHolder = await this.pendingChannels_.AcquireReadLockAsync(token);
-            throw new NotImplementedException();
         }
     }
 }
