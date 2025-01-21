@@ -1,9 +1,27 @@
 namespace BufferKit.xUnit.Test
 {
-    public class BuffSegmTest
+    public sealed class BuffSegmTest
     {
         [Fact]
-        public void BuffSegmRefBorrowSliceShouldChangeLength()
+        public void BuffSegmToMemoryShouldChangeLength()
+        {
+            var data = new byte[128];
+            using (var segmRef = new BuffSegmRef<byte>(new ReadOnlyMemory<byte>(data)))
+            {
+                Assert.Equal((uint)data.Length, segmRef.Length);
+                var memory = segmRef.Memory;
+                Assert.Equal((uint)0, segmRef.Length);
+            }
+            using (var segmMut = new BuffSegmMut<byte>(new Memory<byte>(data)))
+            {
+                Assert.Equal((uint)data.Length, segmMut.Length);
+                var memory = segmMut.Memory;
+                Assert.Equal((uint)0, segmMut.Length);
+            }
+        }
+
+        [Fact]
+        public async Task BuffSegmRefBorrowSliceShouldChangeLength()
         {
             var source = new byte[256];
             for (var u = 0; u < source.Length; ++u)
@@ -16,7 +34,7 @@ namespace BufferKit.xUnit.Test
             {
                 if (segm.Length == 0)
                     break;
-                var maybeSlice = segm.BorrowSlice(c);
+                var maybeSlice = await segm.SliceAsync(c);
                 if (!maybeSlice.TryPickT0(out var slice, out var err))
                     throw err.CreateException();
 
@@ -34,7 +52,7 @@ namespace BufferKit.xUnit.Test
         }
 
         [Fact]
-        public void BuffSegmMutBorrowSliceShouldChangeLength()
+        public async Task BuffSegmMutBorrowSliceShouldChangeLength()
         {
             var source = new byte[256];
             for (var u = 0; u < source.Length; ++u)
@@ -47,7 +65,7 @@ namespace BufferKit.xUnit.Test
             {
                 if (segm.Length == 0)
                     break;
-                var maybeSlice = segm.BorrowSlice(c);
+                var maybeSlice = await segm.SliceAsync(c);
                 if (!maybeSlice.TryPickT0(out var slice, out var err))
                     throw err.CreateException();
 

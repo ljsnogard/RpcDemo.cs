@@ -5,7 +5,9 @@
     using OneOf;
 
     public interface IBufferError
-    { }
+    {
+        public Exception AsException();
+    }
 
     /// <summary>
     /// 可支持一对且仅支持一对生产者和消费者的缓冲
@@ -41,9 +43,17 @@
         public void TrySetTxClosed();
     }
 
-    public readonly struct BuffTxError
+    public readonly struct BuffIoError : IBufferError
     {
         public OneOf<IBufferError, BuffSegmError> InnerError { get; init; }
+
+        public Exception AsException()
+        {
+            if (this.InnerError.TryPickT0(out var buffErr, out var segmErr))
+                return buffErr.AsException();
+            else
+                return segmErr.CreateException();
+        }
     }
 
     /// <summary>
@@ -51,7 +61,7 @@
     /// </summary>
     /// <typeparam name="T">缓冲区的数据单元类型</typeparam>
     /// <typeparam name="E">缓冲区的错误类型</typeparam>
-    public struct BuffTx<T> : IDisposable
+    public sealed class BuffTx<T> : IDisposable
     {
         private IBufferInternal<T>? buff_;
 
@@ -63,7 +73,7 @@
             this.shouldCloseOnDispose_ = shouldCloseOnDispose;
         }
 
-        public readonly bool IsRxClosed
+        public bool IsRxClosed
         {
             get
             {
@@ -80,7 +90,7 @@
         /// <param name="length"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public readonly UniTask<OneOf<BuffSegmMut<T>, IBufferError>> WriteAsync(uint length, CancellationToken token = default)
+        public UniTask<OneOf<BuffSegmMut<T>, IBufferError>> WriteAsync(uint length, CancellationToken token = default)
         {
             if (this.buff_ is IBufferInternal<T> buff)
                 return buff.WriteAsync(length, token);
@@ -89,47 +99,44 @@
         }
 
         /// <summary>
-        /// 将外部缓存中的数据以复制的方式填充到内部缓存中，并返回已复制的长度
+        /// 将参数所指定的外部缓存中的数据以复制的方式填充到内部缓存中，并返回已复制的长度
         /// </summary>
         /// <param name="source"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public readonly async UniTask<OneOf<uint, BuffTxError>> WriteAsync(ReadOnlyMemory<T> source, CancellationToken token = default)
+        public async UniTask<OneOf<uint, BuffIoError>> DumpAsync(ReadOnlyMemory<T> source, CancellationToken token = default)
         {
             if (this.buff_ is not IBufferInternal<T> buffer)
                 throw CreateObjectDisposedException();
 
-            uint filledCounut = 0;
+            uint filledCount = 0;
             uint sourceLength = (uint)source.Length;
-            while (filledCounut < sourceLength)
+            while (filledCount < sourceLength)
             {
-                var unfilledLength = sourceLength - filledCounut;
+                var unfilledLength = sourceLength - filledCount;
                 var maybeBuff = await buffer.WriteAsync(unfilledLength, token);
                 if (!maybeBuff.TryPickT0(out var txBuff, out var writerErr))
                     throw writerErr.CreateException();
-
-                var unfilledSource = source.Slice((int)filledCounut, (int)txBuff.Length);
-                var maybeSlice = txBuff.BorrowSlice(unfilledLength);
-                if (!maybeSlice.TryPickT0(out var slice, out var segmErr))                
-                    return new BuffTxError { InnerError = segmErr };
-                
-                using (slice)
+                using (txBuff)
                 {
-                    for (var i = 0; i < unfilledSource.Length; ++i)
-                        slice.Memory.Span[i] = unfilledSource.Span[i];
-                    filledCounut += unfilledLength;
+                    var unfilledSource = source.Slice((int)filledCount);
+                    filledCount += txBuff.CopyFrom(unfilledSource);
                 }
             }
-            return filledCounut;
+            return filledCount;
         }
 
-        void IDisposable.Dispose()
+        public void Dispose()
         {
+            GC.SuppressFinalize(this);
             if (!this.shouldCloseOnDispose_)
                 return;
             if (this.buff_ is IBufferInternal<T> buff)
                 buff.TrySetTxClosed();
         }
+
+        ~BuffTx()
+            => this.Dispose();
 
         static ObjectDisposedException CreateObjectDisposedException()
             => new ObjectDisposedException(typeof(BuffTx<T>).ToString());
@@ -139,7 +146,7 @@
     /// 缓冲区的消费者端
     /// </summary>
     /// <typeparam name="T">缓冲区的数据单元类型</typeparam>
-    public struct BuffRx<T> : IDisposable
+    public sealed class BuffRx<T> : IDisposable
     {
         private IBufferInternal<T>? buff_;
 
@@ -151,13 +158,24 @@
             this.shouldCloseOnDispose_ = shouldCloseOnDispose;
         }
 
+        public bool IsTxClosed
+        {
+            get
+            {
+                if (this.buff_ is IBufferInternal<T> buff)
+                    return buff.IsTxClosed;
+                else
+                    throw CreateObjectDisposedException();
+            }
+        }
+
         /// <summary>
         /// 从内部缓冲区中借出一段可供消费者读取的已填充缓存，该缓存长度不小于给定的长度；如果执行完成，则返回该已填充缓存
         /// </summary>
         /// <param name="length"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public readonly UniTask<OneOf<BuffSegmRef<T>, IBufferError>> ReadAsync(uint length, CancellationToken token = default)
+        public UniTask<OneOf<BuffSegmRef<T>, IBufferError>> ReadAsync(uint length, CancellationToken token = default)
         {
             if (this.buff_ is IBufferInternal<T> buff)
                 return buff.ReadAsync(length, token);
@@ -166,48 +184,45 @@
         }
 
         /// <summary>
-        /// 将已缓存数据以复制的方式填充到指定的外部缓存，并返回已复制的长度
+        /// 将已缓存数据以复制的方式填充到参数指定的外部缓存，并返回已复制的长度
         /// </summary>
         /// <param name="target"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public async UniTask<OneOf<uint, BuffTxError>> ReadAsync(Memory<T> target, CancellationToken token = default)
+        public async UniTask<OneOf<uint, BuffIoError>> FillAsync(Memory<T> target, CancellationToken token = default)
         {
             if (this.buff_ is not IBufferInternal<T> buffer)
                 throw CreateObjectDisposedException();
 
-            uint filledCounut = 0;
+            uint filledCount = 0;
             uint targetLength = (uint)target.Length;
-            while (filledCounut < targetLength)
+            while (filledCount < targetLength)
             {
-                var unfilledLength = targetLength - filledCounut;
+                var unfilledLength = targetLength - filledCount;
                 var maybeBuff = await buffer.ReadAsync(unfilledLength, token);
                 if (!maybeBuff.TryPickT0(out var rxBuff, out var readerErr))
                     throw readerErr.CreateException();
 
-                var unfilledTarget = target.Slice((int)filledCounut, (int)rxBuff.Length);
-                var maybeSlice = rxBuff.BorrowSlice(unfilledLength);
-                if (!maybeSlice.TryPickT0(out var slice, out var segmErr))
-                    return new BuffTxError { InnerError = segmErr };
-
-                using (slice)
+                using (rxBuff)
                 {
-                    for (var i = 0; i < unfilledTarget.Length; ++i)
-                        unfilledTarget.Span[i] = slice.Memory.Span[i];
-
-                    filledCounut += unfilledLength;
+                    var unfilledTarget = target.Slice((int)filledCount, (int)rxBuff.Length);
+                    filledCount += rxBuff.CopyTo(unfilledTarget);
                 }
             }
-            return filledCounut;
+            return filledCount;
         }
 
-        void IDisposable.Dispose()
+        public void Dispose()
         {
+            GC.SuppressFinalize(this);
             if (!this.shouldCloseOnDispose_)
                 return;
             if (this.buff_ is IBufferInternal<T> buff)
                 buff.TrySetRxClosed();
         }
+
+        ~BuffRx()
+            => this.Dispose();
 
         static ObjectDisposedException CreateObjectDisposedException()
             => new ObjectDisposedException(typeof(BuffTx<T>).ToString());

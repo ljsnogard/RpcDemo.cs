@@ -1,23 +1,11 @@
 ﻿namespace BufferKit
 {
+    using System.Diagnostics;
     using System.Diagnostics.CodeAnalysis;
-    using System.Threading.Tasks;
 
     using Cysharp.Threading.Tasks;
 
     using OneOf;
-
-    internal readonly struct BorrowInfo
-    {
-        public uint Offset { get; init; }
-        public uint Length { get; init; }
-    }
-
-    internal readonly struct Demand
-    {
-        public uint Amount { get; init; }
-        public TaskCompletionSource<BorrowInfo> Signal { get; init; }
-    }
 
     public readonly struct RingBufferError : IBufferError
     {
@@ -26,11 +14,16 @@
         private RingBufferError(uint code)
             => this.code_ = code;
 
-        public static readonly ReadOnlyMemory<string> NAMES = new ReadOnlyMemory<string>(["Idle", "Closed"]);
+        public Exception AsException()
+            => new Exception(this.ToString());
+
+        public static readonly ReadOnlyMemory<string> NAMES = new ReadOnlyMemory<string>(["Idle", "Closed", "Incapable"]);
 
         internal static readonly RingBufferError Idle = new RingBufferError(0);
 
         public static readonly RingBufferError Closed = new RingBufferError(1);
+
+        public static readonly RingBufferError Incapable = new RingBufferError(2);
 
         public static bool operator ==(RingBufferError lhs, RingBufferError rhs)
             => lhs.code_ == rhs.code_;
@@ -53,22 +46,34 @@
             => HashCode.Combine(typeof(RingBufferError), this.code_);
     }
 
-    public sealed class RingBuffer<T> : IBufferInternal<T>
+    public sealed partial class RingBuffer<T> : IBufferInternal<T>
     {
         private readonly Memory<T> memory_;
 
+        /// <summary>
+        /// 控制写者并发数量上限为1
+        /// </summary>
         private readonly SemaphoreSlim txSema_;
 
+        /// <summary>
+        /// 控制读者并发数量上限为1
+        /// </summary>
         private readonly SemaphoreSlim rxSema_;
-
-        private OneOf<Demand, RingBufferError> txDemand_;
-
-        private OneOf<Demand, RingBufferError> rxDemand_;
 
         /// <summary>
         /// 缓冲区最大容量
         /// </summary>
         private readonly uint capacity_;
+
+        /// <summary>
+        /// 用于唤醒等待的写者
+        /// </summary>
+        private OneOf<Demand, RingBufferError> txDemand_;
+
+        /// <summary>
+        /// 用于唤醒等待的读者
+        /// </summary>
+        private OneOf<Demand, RingBufferError> rxDemand_;
 
         /// <summary>
         /// 写者位置到缓冲区头部的单位数量
@@ -85,8 +90,9 @@
         /// </summary>
         private bool inversed_;
 
-        public RingBuffer(Memory<T> memory)
+        public RingBuffer(uint capacity)
         {
+            var memory = new Memory<T>(new T[(int)capacity]);
             this.memory_ = memory;
             this.txSema_ = new SemaphoreSlim(1, 1);
             this.rxSema_ = new SemaphoreSlim(1, 1);
@@ -98,34 +104,54 @@
             this.inversed_ = false;
         }
 
+        public static OneOf<(BuffTx<T>, BuffRx<T>), RingBufferError> TrySplit(ref RingBuffer<T>? ringBuffer, bool shouldCloseOnDispose = true)
+        {
+            if (ringBuffer is not RingBuffer<T> buffer)
+                throw new ArgumentNullException(nameof(ringBuffer));
+
+            if (buffer.IsTxClosed || buffer.IsRxClosed)
+                return RingBufferError.Closed;
+
+            var tx = new BuffTx<T>(buffer, shouldCloseOnDispose);
+            var rx = new BuffRx<T>(buffer, shouldCloseOnDispose);
+            ringBuffer = null;
+            return (tx, rx);
+        }
+
         public uint Capacity
             => this.capacity_;
 
         /// <summary>
         /// 可供写者填充的数据量
         /// </summary>
-        internal uint WriterSize
+        private uint WriterSize
         {
             get
             {
-                if (this.inversed_)
-                    return this.rxPos_ - this.txPos_;
-                else
-                    return this.capacity_ - this.txPos_ + this.rxPos_;
+                lock (this)
+                {
+                    if (this.inversed_)
+                        return this.rxPos_ - this.txPos_;
+                    else
+                        return this.capacity_ - this.txPos_;
+                }
             }
         }
 
         /// <summary>
         /// 可供读者消费的数据量
         /// </summary>
-        internal uint ReaderSize
+        private uint ReaderSize
         {
             get
             {
-                if (this.inversed_)
-                    return this.rxPos_ - this.txPos_;
-                else
-                    return this.txPos_ - this.rxPos_;
+                lock (this)
+                {
+                    if (this.inversed_)
+                        return this.rxPos_ == this.txPos_ ? this.capacity_ : this.rxPos_ - this.txPos_;
+                    else
+                        return this.txPos_ - this.rxPos_;
+                }
             }
         }
 
@@ -137,14 +163,58 @@
         /// <returns></returns>
         public async UniTask<OneOf<BuffSegmRef<T>, RingBufferError>> ReadAsync(uint length, CancellationToken token = default)
         {
+            if (this.rxDemand_.TryPickT1(out var error, out var _) && error == RingBufferError.Closed)
+                return error;
+            if (length == 0)
+                return new BuffSegmRef<T>(ReadOnlyMemory<T>.Empty);
+            if (length > this.capacity_)
+                return RingBufferError.Incapable;
+
+            var succ = false;
             try
             {
                 await this.rxSema_.WaitAsync(token);
-                throw new NotImplementedException();
+                while (true)
+                {
+                    var readerSize = this.ReaderSize;
+                    if (readerSize == 0 && this.IsTxClosed)
+                        return RingBufferError.Closed;
+
+                    if (readerSize > 0)
+                    {
+                        var sliceLen = Math.Min(length, readerSize);
+                        var memory = this.memory_.Slice((int)this.rxPos_, (int)sliceLen);
+                        var reclaim = new RingBuffReclaimRef(this);
+                        succ = true;
+                        return new BuffSegmRef<T>(reclaim, memory);
+                    }
+                    while (!succ)
+                    {
+                        if (this.rxDemand_.TryPickT0(out var demand, out error))
+                        {
+                            await demand.Signal.Task.AttachExternalCancellation(token);
+                            break;
+                        }
+                        else
+                        {
+                            if (error != RingBufferError.Idle)
+                                return error;
+
+                            this.rxDemand_ = new Demand
+                            {
+                                Amount = length,
+                                Signal = new UniTaskCompletionSource(),
+                            };
+                        }
+                    }
+                }
             }
             finally
             {
-                if (this.rxSema_.CurrentCount == 0)
+                if (succ && this.rxDemand_.IsT0)
+                    this.rxDemand_ = RingBufferError.Idle;
+                    
+                if (!succ && this.rxSema_.CurrentCount == 0)
                     this.rxSema_.Release();
             }
         }
@@ -155,8 +225,63 @@
         /// <param name="length"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public UniTask<OneOf<BuffSegmMut<T>, RingBufferError>> WriteAsync(uint length, CancellationToken token = default)
-            => throw new NotImplementedException();
+        public async UniTask<OneOf<BuffSegmMut<T>, RingBufferError>> WriteAsync(uint length, CancellationToken token = default)
+        {
+            if (this.txDemand_.TryPickT1(out var error, out var _) && error == RingBufferError.Closed)
+                return error;
+            if (length == 0)
+                return new BuffSegmMut<T>(Memory<T>.Empty);
+            if (length > this.capacity_)
+                return RingBufferError.Incapable;
+
+            var succ = false;
+            try
+            {
+                await this.txSema_.WaitAsync(token);
+                while (true)
+                {
+                    var writerSize = this.WriterSize;
+                    if (writerSize == 0 && this.IsRxClosed)
+                        return RingBufferError.Closed;
+
+                    if (writerSize > 0)
+                    {
+                        var sliceLen = Math.Min(length, writerSize);
+                        var memory = this.memory_.Slice((int)this.txPos_, (int)sliceLen);
+                        var reclaim = new RingBuffReclaimMut(this);
+                        succ = true;
+                        return new BuffSegmMut<T>(reclaim, memory);
+                    }
+                    while (!succ)
+                    {
+                        if (this.txDemand_.TryPickT0(out var demand, out error))
+                        {
+                            await demand.Signal.Task.AttachExternalCancellation(token);
+                            break;
+                        }
+                        else
+                        {
+                            if (error != RingBufferError.Idle)
+                                return error;
+
+                            this.txDemand_ = new Demand
+                            {
+                                Amount = length,
+                                Signal = new UniTaskCompletionSource(),
+                            };
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                if (succ && this.txDemand_.IsT0)
+                    this.txDemand_ = RingBufferError.Idle;
+
+                if (!succ && this.txSema_.CurrentCount == 0)
+                    this.txSema_.Release();
+            }
+        }
 
         public bool IsRxClosed
         {
@@ -191,17 +316,106 @@
         }
 
         void IBufferInternal<T>.TrySetRxClosed()
-            => throw new NotImplementedException();
+        {
+            this.rxSema_.Wait();
+            this.rxDemand_ = RingBufferError.Closed;
+        }
 
         void IBufferInternal<T>.TrySetTxClosed()
-            => throw new NotImplementedException();
+        {
+            this.txSema_.Wait();
+            this.txDemand_ = RingBufferError.Closed;
+        }
     }
 
-    internal readonly struct RingBuffReclaimRef<T>: IReclaimRef<T>
+    public sealed partial class RingBuffer<T>
     {
-        private readonly RingBuffer<T> buffer_;
+        private readonly struct Demand
+        {
+            public uint Amount { get; init; }
 
-        public void Reclaim(ReadOnlyMemory<T> mem)
-            => throw new NotImplementedException();
+            public UniTaskCompletionSource Signal { get; init; }
+        }
+
+        private readonly struct RingBuffReclaimRef : IReclaimRef<T>
+        {
+            private readonly RingBuffer<T> buffer_;
+
+            public RingBuffReclaimRef(RingBuffer<T> buffer)
+                => this.buffer_ = buffer;
+
+            public void Reclaim(ReadOnlyMemory<T> mem, uint offset)
+            {
+                lock (this.buffer_)
+                {
+                    var newPos = this.buffer_.rxPos_ + offset;
+#if DEBUG
+                    if (newPos > this.buffer_.capacity_)
+                        throw new ArgumentOutOfRangeException($"txPos({this.buffer_.txPos_}) + offset({offset}) > capacity({this.buffer_.capacity_})");
+#endif
+                    if (newPos == this.buffer_.capacity_)
+                    {
+                        if (!this.buffer_.inversed_)
+                            throw new Exception("Illegal State");
+
+                        this.buffer_.rxPos_ = 0;
+                        this.buffer_.inversed_ = false;
+                    }
+                    else
+                    {
+                        if (newPos == this.buffer_.txPos_ && !this.buffer_.inversed_)
+                        {
+                            this.buffer_.txPos_ = 0;
+                            this.buffer_.rxPos_ = 0;
+                        }
+                        else
+                        {
+                            this.buffer_.rxPos_ = newPos;
+                        }
+                    }
+                }
+                if (this.buffer_.txDemand_.TryPickT0(out var demand, out var _))
+                {
+                    this.buffer_.txDemand_ = RingBufferError.Idle;
+                    demand.Signal.TrySetResult();
+                }
+                this.buffer_.rxSema_.Release();
+            }
+        }
+
+        private readonly struct RingBuffReclaimMut : IReclaimMut<T>
+        {
+            private readonly RingBuffer<T> buffer_;
+
+            public RingBuffReclaimMut(RingBuffer<T> buffer)
+                => this.buffer_ = buffer;
+
+            public void Reclaim(Memory<T> mem, uint offset)
+            {
+                lock (this.buffer_)
+                {
+                    var newPos = this.buffer_.txPos_ + offset;
+#if DEBUG
+                    if (newPos > this.buffer_.capacity_)
+                        throw new ArgumentOutOfRangeException($"txPos({this.buffer_.txPos_}) + offset({offset}) > capacity({this.buffer_.capacity_})");
+#endif
+                    if (newPos == this.buffer_.capacity_)
+                    {
+                        this.buffer_.txPos_ = 0;
+                        this.buffer_.inversed_ = true;
+                    }
+                    else
+                    {
+                        this.buffer_.txPos_ = newPos;
+                    }
+                }
+                if (this.buffer_.rxDemand_.TryPickT0(out var demand, out var _))
+                {
+                    this.buffer_.rxDemand_ = RingBufferError.Idle;
+                    demand.Signal.TrySetResult();
+                }
+                this.buffer_.txSema_.Release();
+            }
+        }
     }
 }
