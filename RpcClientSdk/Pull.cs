@@ -23,7 +23,7 @@
         /// <summary>
         /// 推送数据包的头部
         /// </summary>
-        public IAsyncEnumerable<HeaderRx> Headers { get; init; }
+        public IAsyncEnumerable<Header> Headers { get; init; }
 
         /// <summary>
         /// 推送数据包的主体数据

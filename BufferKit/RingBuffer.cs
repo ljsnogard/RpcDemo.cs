@@ -1,6 +1,5 @@
 ﻿namespace BufferKit
 {
-    using System.Diagnostics;
     using System.Diagnostics.CodeAnalysis;
 
     using Cysharp.Threading.Tasks;
@@ -17,7 +16,7 @@
         public Exception AsException()
             => new Exception(this.ToString());
 
-        public static readonly ReadOnlyMemory<string> NAMES = new ReadOnlyMemory<string>(["Idle", "Closed", "Incapable"]);
+        internal static readonly ReadOnlyMemory<string> NAMES = new ReadOnlyMemory<string>(["Idle", "Closed", "Incapable"]);
 
         internal static readonly RingBufferError Idle = new RingBufferError(0);
 
@@ -46,7 +45,7 @@
             => HashCode.Combine(typeof(RingBufferError), this.code_);
     }
 
-    public sealed partial class RingBuffer<T> : IBufferInternal<T>
+    public sealed partial class RingBuffer<T> : IBuffer<T>
     {
         private readonly Memory<T> memory_;
 
@@ -104,22 +103,24 @@
             this.inversed_ = false;
         }
 
-        public static OneOf<(BuffTx<T>, BuffRx<T>), RingBufferError> TrySplit(ref RingBuffer<T>? ringBuffer, bool shouldCloseOnDispose = true)
+        public OneOf<(BuffTx<T>, BuffRx<T>), RingBufferError> TrySplit(bool shouldCloseOnDispose = true)
         {
-            if (ringBuffer is not RingBuffer<T> buffer)
-                throw new ArgumentNullException(nameof(ringBuffer));
-
-            if (buffer.IsTxClosed || buffer.IsRxClosed)
+            if (this.IsTxClosed || this.IsRxClosed)
                 return RingBufferError.Closed;
 
-            var tx = new BuffTx<T>(buffer, shouldCloseOnDispose);
-            var rx = new BuffRx<T>(buffer, shouldCloseOnDispose);
-            ringBuffer = null;
+            var tx = this.CreateTx(shouldCloseOnDispose);
+            var rx = this.CreateRx(shouldCloseOnDispose);
             return (tx, rx);
         }
 
         public uint Capacity
             => this.capacity_;
+
+        public BuffRx<T> CreateRx(bool shouldCloseOnDispose = false)
+            => new BuffRx<T>(this, shouldCloseOnDispose ? TrySetRxClosed : null);
+
+        public BuffTx<T> CreateTx(bool shouldCloseOnDispose = false)
+            => new BuffTx<T>(this, shouldCloseOnDispose ? TrySetTxClosed : null);
 
         /// <summary>
         /// 可供写者填充的数据量
@@ -315,16 +316,20 @@
             return r.MapT1((e) => (IBufferError)e);
         }
 
-        void IBufferInternal<T>.TrySetRxClosed()
+        static void TrySetRxClosed(IBuffer<T> buffer)
         {
-            this.rxSema_.Wait();
-            this.rxDemand_ = RingBufferError.Closed;
+            if (buffer is not RingBuffer<T> ringBuff)
+                return;
+            ringBuff.rxSema_.Wait();
+            ringBuff.rxDemand_ = RingBufferError.Closed;
         }
 
-        void IBufferInternal<T>.TrySetTxClosed()
+        static void TrySetTxClosed(IBuffer<T> buffer)
         {
-            this.txSema_.Wait();
-            this.txDemand_ = RingBufferError.Closed;
+            if (buffer is not RingBuffer<T> ringBuff)
+                return; 
+            ringBuff.txSema_.Wait();
+            ringBuff.txDemand_ = RingBufferError.Closed;
         }
     }
 

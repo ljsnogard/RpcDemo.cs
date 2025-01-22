@@ -21,7 +21,7 @@
     {
         public ResponseStatus Status { get; init; }
 
-        public IAsyncEnumerable<HeaderRx> Headers { get; init; }
+        public IAsyncEnumerable<Header> Headers { get; init; }
 
         public BuffRx<byte> Payload { get; init; }
     }

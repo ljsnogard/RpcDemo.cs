@@ -34,10 +34,10 @@
         private readonly RingBuffer<byte> rx_;
 
         internal BuffRx<byte> TxReader
-            => throw new NotImplementedException();
+            => this.tx_.CreateRx(true);
 
         internal BuffTx<byte> RxWriter
-            => throw new NotImplementedException();
+            => this.rx_.CreateTx(true);
 
         public Channel(uint txBuffSize, uint rxBuffSize)
         {

@@ -32,12 +32,12 @@
                 rxBuff.Dispose();
             }
         }
-        [Fact]
 
+        [Fact]
         public async Task RingBufferShouldWorkForSingleUnit()
         {
-            RingBuffer<byte>? ringBuffer = new RingBuffer<byte>(1);
-            var maybe = RingBuffer<byte>.TrySplit(ref ringBuffer);
+            var ringBuffer = new RingBuffer<byte>(1);
+            var maybe = ringBuffer.TrySplit();
             if (!maybe.TryPickT0(out var pair, out var _))
                 throw new Exception();
 

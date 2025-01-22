@@ -17,7 +17,7 @@
         public Uri Location { get; }
 
         public UniTask<OneOf<PushError, None>> SendItemAsync
-            ( IAsyncEnumerable<HeaderRx> headers
+            ( IAsyncEnumerable<Header> headers
             , BuffRx<byte> payloadReader
             , CancellationToken token = default);
     }

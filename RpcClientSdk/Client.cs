@@ -23,7 +23,7 @@
         /// <returns></returns>
         public UniTask<OneOf<Response, ClientError>> Request
             ( Uri location
-            , IAsyncEnumerable<HeaderRx> headers
+            , IAsyncEnumerable<Header> headers
             , BuffRx<byte> payload)
         {
             throw new NotImplementedException();
