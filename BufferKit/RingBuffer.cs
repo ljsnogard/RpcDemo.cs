@@ -157,7 +157,7 @@
         }
 
         /// <summary>
-        /// 从内部缓冲区中借出一段可供消费者读取的已填充缓存，该缓存长度不小于给定的长度；如果执行完成，则返回该已填充缓存
+        /// 从内部缓冲区中借出一段可供消费者读取的已填充缓存，该缓存长度不大于给定的长度；如果执行完成，则返回该已填充缓存
         /// </summary>
         /// <param name="length"></param>
         /// <param name="token"></param>
@@ -192,19 +192,10 @@
                         while (true)
                         {
                             if (this.readerDemand_.TryPickT0(out demand, out error))
-                            {
                                 break;
-                            }
-                            else
-                            {
-                                if (error != RingBufferError.Idle)
-                                    return error;
-                                this.readerDemand_ = new Demand
-                                {
-                                    Amount = length,
-                                    Signal = new UniTaskCompletionSource(),
-                                };
-                            }
+                            if (error != RingBufferError.Idle)
+                                return error;
+                            this.readerDemand_ = new Demand { Amount = length, Signal = new UniTaskCompletionSource() };
                         }
                     }
                     await demand.Signal.Task.AttachExternalCancellation(token);
@@ -221,7 +212,7 @@
         }
 
         /// <summary>
-        /// 从内部缓冲区中借出一段未填充缓存，该缓存长度不小于给定的长度；如果执行完成，则返回该未填充缓存
+        /// 从内部缓冲区中借出一段未填充缓存，该缓存长度不大于给定的长度；如果成功则返回该未填充缓存
         /// </summary>
         /// <param name="length"></param>
         /// <param name="token"></param>
@@ -256,19 +247,10 @@
                         while (true)
                         {
                             if (this.writerDemand_.TryPickT0(out demand, out error))
-                            {
                                 break;
-                            }
-                            else
-                            {
-                                if (error != RingBufferError.Idle)
-                                    return error;
-                                this.writerDemand_ = new Demand
-                                {
-                                    Amount = length,
-                                    Signal = new UniTaskCompletionSource(),
-                                };
-                            }
+                            if (error != RingBufferError.Idle)
+                                return error;
+                            this.writerDemand_ = new Demand { Amount = length, Signal = new UniTaskCompletionSource() };
                         }
                     }
                     await demand.Signal.Task.AttachExternalCancellation(token);

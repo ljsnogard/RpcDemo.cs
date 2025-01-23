@@ -152,7 +152,6 @@
             this.offset_ += length;
             this.semaphore_.Release();
         }
-        
 
         public void Dispose()
         {
@@ -294,10 +293,6 @@
         private static void DoNothing() { }
     }
 
-    /// <summary>
-    /// 用于为子串提供
-    /// </summary>
-    /// <typeparam name="T"></typeparam>
     internal readonly struct ReclaimBuffSegm<T>: IReclaimReaderBuffSegm<T>, IReclaimWriterBuffSegm<T>
     {
         private readonly IBuffSegm<T> source_;
