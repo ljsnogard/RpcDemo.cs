@@ -6,6 +6,8 @@
 
     using OneOf;
 
+    using System.Diagnostics;
+
     internal readonly struct ChannelId: IEquatable<ChannelId>, IComparable<ChannelId>
     {
         public ushort LocalPort { get; init; }
@@ -27,28 +29,95 @@
             => HashCode.Combine(this.LocalPort, this.RemotePort);
     }
 
+    public readonly struct ChannelError
+    {
+        public OneOf<RingBufferError, BuffIoError, BuffSegmError> InnerError { get; init; }
+    }
+
     public sealed class Channel
     {
-        private readonly RingBuffer<byte> tx_;
+        private readonly BuffTx<byte> tx_;
 
-        private readonly RingBuffer<byte> rx_;
+        private readonly RingBuffer<byte> rxBuff_;
 
-        internal BuffRx<byte> TxReader
-            => this.tx_.CreateRx(true);
+        private readonly ushort localPort_;
+
+        private readonly ushort remotePort_;
 
         internal BuffTx<byte> RxWriter
-            => this.rx_.CreateTx(true);
+            => this.rxBuff_.CreateTx(false);
 
-        public Channel(uint txBuffSize, uint rxBuffSize)
+        public Channel
+            ( BuffTx<byte> tx
+            , uint rxBuffSize
+            , ushort localPort_
+            , ushort remotePort_)
         {
-            this.tx_ = new RingBuffer<byte>(txBuffSize);
-            this.rx_ = new RingBuffer<byte>(rxBuffSize);
+            this.tx_ = tx;
+            this.rxBuff_ = new RingBuffer<byte>(rxBuffSize);
+            this.localPort_ = localPort_;
+            this.remotePort_ = remotePort_;
         }
 
-        public UniTask<OneOf<uint, ConnectionError>> SendAsync(BuffRx<byte> data, CancellationToken token = default)
-            => throw new NotImplementedException();
+        /// <summary>
+        /// 发送任意长度的数据，此方法会自动将数据切分为数据包发送
+        /// </summary>
+        /// <param name="data"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        /// <exception cref="Exception"></exception>
+        /// <remarks>
+        /// <para>因为这只是一个 Demo, 简单起见的实现, 因此具有包括但不仅限于如下的隐患: </para>
+        /// <para>1. 如果 data 的数据流中断, 有可能引起其他 channel 的数据失效; </para>
+        /// <para>2. 如果接收方数据拥堵或者网络中断, 发送方无法知悉, 也无法实现重发; </para>
+        /// <para>3. 如果发送方故障导致没有正确发送末段数据, 接收方将只能死等; </para>
+        /// <para>4. 数据切分成数据包的大小完全取决于 data 取出的大小, 有可能有效荷载太小导致传输效率低; </para>
+        /// </remarks>
+        public async UniTask<OneOf<uint, ChannelError>> SendAsync(BuffRx<byte> data, CancellationToken token = default)
+        {
+            await Task.Yield();
+            throw new NotImplementedException();
 
-        public UniTask<OneOf<BuffRx<byte>, ConnectionError>> RecvAsync(CancellationToken token = default)
-            => throw new NotImplementedException();
+            static async UniTask<OneOf<uint, ChannelError>> SendPacketAsync
+                ( BuffTx<byte> muxTx
+                , SimpleMux.PacketHeader header
+                , ReaderBuffSegm<byte> payload
+                , CancellationToken token = default)
+            {
+                Debug.Assert(payload.Length == header.PayloadSize);
+
+                var headerBuff = new Memory<byte>(new byte[SimpleMux.PACKET_HEADER_SIZE]);
+                header.WriteBigEndianBytes(headerBuff.Span);
+
+                var dumpResult = await muxTx.DumpAsync(headerBuff, token);
+                if (!dumpResult.TryPickT0(out var dumpHeaderSize, out var dumpError))
+                    return new ChannelError { InnerError = dumpError };
+                Debug.Assert(dumpHeaderSize == SimpleMux.PACKET_HEADER_SIZE);
+
+                // 发送 payload
+                while (payload.Length > 0)
+                {
+                    var writeResult = await muxTx.WriteAsync(payload.Length, token);
+                    if (!writeResult.TryPickT0(out var dstSegm, out var writeErr))
+                        throw writeErr.AsException();
+
+                    var maybeSrcSegm = await payload.SliceAsync(dstSegm.Length, token);
+                    if (!maybeSrcSegm.TryPickT0(out var srcSegm, out var sliceErr))
+                        return new ChannelError { InnerError = sliceErr };
+
+                    using (srcSegm)
+                    {
+                        dstSegm.CopyFrom(srcSegm.Memory);
+                    }
+                }
+                return header.PayloadSize;
+            }
+        }
+
+        public async UniTask<OneOf<ReaderBuffSegm<byte>, ChannelError>> RecvAsync(uint length, CancellationToken token = default)
+        {
+            var result = await this.rxBuff_.ReadAsync(length, token);
+            return result.MapT1((e) => new ChannelError { InnerError = e });
+        }
     }
 }

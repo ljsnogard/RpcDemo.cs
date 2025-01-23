@@ -6,13 +6,13 @@ namespace BufferKit.xUnit.Test
         public void BuffSegmToMemoryShouldChangeLength()
         {
             var data = new byte[128];
-            using (var segmRef = new BuffSegmRef<byte>(new ReadOnlyMemory<byte>(data)))
+            using (var segmRef = new ReaderBuffSegm<byte>(new ReadOnlyMemory<byte>(data)))
             {
                 Assert.Equal((uint)data.Length, segmRef.Length);
                 var memory = segmRef.Memory;
                 Assert.Equal((uint)0, segmRef.Length);
             }
-            using (var segmMut = new BuffSegmMut<byte>(new Memory<byte>(data)))
+            using (var segmMut = new WriterBuffSegm<byte>(new Memory<byte>(data)))
             {
                 Assert.Equal((uint)data.Length, segmMut.Length);
                 var memory = segmMut.Memory;
@@ -27,7 +27,7 @@ namespace BufferKit.xUnit.Test
             for (var u = 0; u < source.Length; ++u)
                 source[u] = (byte)u;
 
-            var segm = new BuffSegmRef<byte>(new ReadOnlyMemory<byte>(source));
+            var segm = new ReaderBuffSegm<byte>(new ReadOnlyMemory<byte>(source));
             byte c = 0;
             int i = 0;
             while (true)
@@ -58,7 +58,7 @@ namespace BufferKit.xUnit.Test
             for (var u = 0; u < source.Length; ++u)
                 source[u] = (byte)u;
 
-            var segm = new BuffSegmMut<byte>(new Memory<byte>(source));
+            var segm = new WriterBuffSegm<byte>(new Memory<byte>(source));
             byte c = 0;
             int i = 0;
             while (true)

@@ -10,7 +10,7 @@
     }
 
     /// <summary>
-    /// 可支持一对且仅支持一对生产者和消费者的缓冲
+    /// 可支持且仅支持一对生产者和消费者的缓冲
     /// </summary>
     /// <typeparam name="T"></typeparam>
     public interface IBuffer<T>
@@ -21,7 +21,7 @@
         /// <param name="length"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public UniTask<OneOf<BuffSegmRef<T>, IBufferError>> ReadAsync(uint length, CancellationToken token = default);
+        public UniTask<OneOf<ReaderBuffSegm<T>, IBufferError>> ReadAsync(uint length, CancellationToken token = default);
 
         /// <summary>
         /// 从内部缓冲区中借出一段未填充缓存，该缓存长度不大于给定的长度；如果执行完成，则返回该未填充缓存
@@ -29,7 +29,7 @@
         /// <param name="length"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public UniTask<OneOf<BuffSegmMut<T>, IBufferError>> WriteAsync(uint length, CancellationToken token = default);
+        public UniTask<OneOf<WriterBuffSegm<T>, IBufferError>> WriteAsync(uint length, CancellationToken token = default);
 
         public bool IsRxClosed { get; }
 
@@ -83,7 +83,7 @@
         /// <param name="length"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public UniTask<OneOf<BuffSegmMut<T>, IBufferError>> WriteAsync(uint length, CancellationToken token = default)
+        public UniTask<OneOf<WriterBuffSegm<T>, IBufferError>> WriteAsync(uint length, CancellationToken token = default)
         {
             if (this.buff_ is IBuffer<T> buff)
                 return buff.WriteAsync(length, token);
@@ -171,7 +171,7 @@
         /// <param name="length"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public UniTask<OneOf<BuffSegmRef<T>, IBufferError>> ReadAsync(uint length, CancellationToken token = default)
+        public UniTask<OneOf<ReaderBuffSegm<T>, IBufferError>> ReadAsync(uint length, CancellationToken token = default)
         {
             if (this.buff_ is IBuffer<T> buff)
                 return buff.ReadAsync(length, token);

@@ -1,7 +1,5 @@
 ﻿namespace BufferKit.xUnit.Test
 {
-    using Microsoft.VisualStudio.TestPlatform.Utilities;
-
     using Xunit.Abstractions;
 
     public sealed class RingBufferTest
@@ -71,6 +69,55 @@
                 }
             };
             await Task.WhenAll(txTask(), rxTask());
+        }
+
+        [Theory]
+        [InlineData(1, 16)]
+        [InlineData(4, 64)]
+        [InlineData(64, 256)]
+        public async Task ReadDataOrderShouldBeTheSameAsWriteOrder(int capacity, int maxNum)
+        {
+            var ringBuffer = new RingBuffer<int>((uint)capacity);
+
+            var testDataSlices = new List<int[]>();
+            var currNum = 0;
+            while (currNum < maxNum)
+            {
+                var restLen = maxNum - currNum;
+                int randLen;
+                if (restLen == 1)
+                    randLen = 1;
+                else
+                    randLen = Random.Shared.Next(1, restLen);
+                var slice = new int[randLen];
+                for (var i = 0; i < randLen; i++)
+                    slice[i] = currNum++;
+                testDataSlices.Add(slice);
+            }
+            var rxWorker = async (BuffRx<int> rx) =>
+            {
+                var readNum = 0;
+                var buff = (new int[1]).AsMemory();
+                while (readNum < maxNum)
+                {
+                    var r = await rx.FillAsync(buff);
+                    Assert.True(r.IsT0);
+                    Assert.Equal((uint)buff.Length, r.AsT0);
+                    Assert.Equal(readNum++, buff.Span[0]);
+                }
+            };
+
+            using var rx = ringBuffer.CreateRx();
+            var rxTask = rxWorker(rx);
+
+            using var tx = ringBuffer.CreateTx();
+            foreach (var slice in testDataSlices)
+            {
+                var d = await tx.DumpAsync(slice);
+                Assert.True(d.IsT0);
+                Assert.Equal((uint)slice.Length, d.AsT0);
+            }
+            await rxTask;
         }
     }
 }

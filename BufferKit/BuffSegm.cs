@@ -9,12 +9,12 @@
     public interface IReclaim<T>
     { }
 
-    public interface IReclaimRef<T>: IReclaim<T>
+    public interface IReclaimReaderBuffSegm<T>: IReclaim<T>
     {
         public void Reclaim(ReadOnlyMemory<T> mem, uint offset);
     }
 
-    public interface IReclaimMut<T>: IReclaim<T>
+    public interface IReclaimWriterBuffSegm<T>: IReclaim<T>
     {
         public void Reclaim(Memory<T> mem, uint offset);
     }
@@ -24,12 +24,12 @@
     internal interface IBuffSegm<T>
     { }
 
-    internal interface IBuffSegmRef<T>: IBuffSegm<T>
+    internal interface IReaderBuffSegm<T>: IBuffSegm<T>
     {
         public void Forward(uint length);
     }
 
-    internal interface IBuffSegmMut<T>: IBuffSegm<T>
+    internal interface IWriterBuffSegm<T>: IBuffSegm<T>
     {
         public void Forward(uint length);
     }
@@ -73,23 +73,23 @@
         }
     }
 
-    public sealed class BuffSegmRef<T>: IBuffSegmRef<T>, IDisposable
+    public sealed class ReaderBuffSegm<T>: IReaderBuffSegm<T>, IDisposable
     {
         private readonly ReadOnlyMemory<T> memory_;
 
         private readonly SemaphoreSlim semaphore_;
 
-        private IReclaimRef<T>? reclaim_;
+        private IReclaimReaderBuffSegm<T>? reclaim_;
 
         private uint offset_;
 
-        public BuffSegmRef(ReadOnlyMemory<T> memory) : this(new NoReclaim<T>(), memory, 0)
+        public ReaderBuffSegm(ReadOnlyMemory<T> memory) : this(new NoReclaim<T>(), memory, 0)
         { }
 
-        public BuffSegmRef(IReclaimRef<T> reclaim, ReadOnlyMemory<T> memory) : this(reclaim, memory, 0)
+        public ReaderBuffSegm(IReclaimReaderBuffSegm<T> reclaim, ReadOnlyMemory<T> memory) : this(reclaim, memory, 0)
         { }
 
-        private BuffSegmRef(IReclaimRef<T> reclaim, ReadOnlyMemory<T> memory, uint offset)
+        private ReaderBuffSegm(IReclaimReaderBuffSegm<T> reclaim, ReadOnlyMemory<T> memory, uint offset)
         {
             this.reclaim_ = reclaim;
             this.semaphore_ = new SemaphoreSlim(1, 1);
@@ -115,6 +115,9 @@
 
         public uint CopyTo(Memory<T> target)
         {
+            if (this.Length == 0 || target.Length == 0)
+                return 0;
+
             var copyLen = Math.Min(this.Length, (uint)target.Length);
             var srcSlice = this.memory_.Slice((int)this.offset_, (int)copyLen);
             srcSlice.CopyTo(target);
@@ -122,7 +125,7 @@
             return copyLen;
         }
 
-        public async UniTask<OneOf<BuffSegmRef<T>, BuffSegmError>> SliceAsync(uint length, CancellationToken token = default)
+        public async UniTask<OneOf<ReaderBuffSegm<T>, BuffSegmError>> SliceAsync(uint length, CancellationToken token = default)
         {
             var succ = false;
             try
@@ -135,7 +138,7 @@
                 var memory = this.memory_.Slice((int)this.offset_, (int)borrowLength);
 
                 succ = true;
-                return new BuffSegmRef<T>(reclaim, memory, 0);
+                return new ReaderBuffSegm<T>(reclaim, memory, 0);
             }
             finally
             {
@@ -144,7 +147,7 @@
             }
         }
 
-        void IBuffSegmRef<T>.Forward(uint length)
+        void IReaderBuffSegm<T>.Forward(uint length)
         {
             this.offset_ += length;
             this.semaphore_.Release();
@@ -153,34 +156,34 @@
 
         public void Dispose()
         {
-            if (this.reclaim_ is IReclaimRef<T> reclaim)
+            if (this.reclaim_ is IReclaimReaderBuffSegm<T> reclaim)
                 reclaim.Reclaim(this.memory_, this.offset_);
 
             this.reclaim_ = null;
             GC.SuppressFinalize(this);
         }
 
-        ~BuffSegmRef()
+        ~ReaderBuffSegm()
             => this.Dispose();
     }
 
-    public sealed class BuffSegmMut<T>: IBuffSegmMut<T>, IDisposable
+    public sealed class WriterBuffSegm<T>: IWriterBuffSegm<T>, IDisposable
     {
         private readonly Memory<T> memory_;
 
         private readonly SemaphoreSlim semaphore_;
 
-        private IReclaimMut<T>? reclaim_;
+        private IReclaimWriterBuffSegm<T>? reclaim_;
 
         private uint offset_;
 
-        public BuffSegmMut(Memory<T> memory) : this(new NoReclaim<T>(), memory)
+        public WriterBuffSegm(Memory<T> memory) : this(new NoReclaim<T>(), memory)
         { }
 
-        public BuffSegmMut(IReclaimMut<T> reclaim, Memory<T> memory) : this(reclaim, memory, 0)
+        public WriterBuffSegm(IReclaimWriterBuffSegm<T> reclaim, Memory<T> memory) : this(reclaim, memory, 0)
         { }
 
-        private BuffSegmMut(IReclaimMut<T> reclaim, Memory<T> memory, uint offset)
+        private WriterBuffSegm(IReclaimWriterBuffSegm<T> reclaim, Memory<T> memory, uint offset)
         {
             this.reclaim_ = reclaim;
             this.semaphore_ = new SemaphoreSlim(1, 1);
@@ -207,7 +210,7 @@
             }
         }
 
-        public async UniTask<OneOf<uint, BuffSegmError>> CopyFromAsync(BuffSegmRef<T> source)
+        public async UniTask<OneOf<uint, BuffSegmError>> CopyFromAsync(ReaderBuffSegm<T> source)
         {
             var copyLen = Math.Min(this.Length, source.Length);
             var maybeSlice = await source.SliceAsync(copyLen);
@@ -224,9 +227,12 @@
 
         public uint CopyFrom(ReadOnlyMemory<T> source)
         {
+            if (this.Length == 0 || source.Length == 0)
+                return 0;
             var copyLen = Math.Min(this.Length, (uint)source.Length);
             var dst = this.memory_.Slice((int)this.offset_);
-            source.CopyTo(dst);
+            var src = source.Slice(0, (int)copyLen);
+            src.CopyTo(dst);
             this.offset_ += copyLen;
             return copyLen;
         }
@@ -237,7 +243,7 @@
         /// <param name="length"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public async UniTask<OneOf<BuffSegmMut<T>, BuffSegmError>> SliceAsync(uint length, CancellationToken token = default)
+        public async UniTask<OneOf<WriterBuffSegm<T>, BuffSegmError>> SliceAsync(uint length, CancellationToken token = default)
         {
             var succ = false;
             try
@@ -249,7 +255,7 @@
                 var memory = this.memory_.Slice((int)this.offset_, (int)borrowLength);
 
                 succ = true;
-                return new BuffSegmMut<T>(reclaim, memory, 0);
+                return new WriterBuffSegm<T>(reclaim, memory, 0);
             }
             finally
             {
@@ -258,7 +264,7 @@
             }
         }
 
-        void IBuffSegmMut<T>.Forward(uint length)
+        void IWriterBuffSegm<T>.Forward(uint length)
         {
             this.offset_ += length;
             this.semaphore_.Release();
@@ -266,18 +272,18 @@
 
         public void Dispose()
         {
-            if (this.reclaim_ is IReclaimMut<T> reclaim)
+            if (this.reclaim_ is IReclaimWriterBuffSegm<T> reclaim)
                 reclaim.Reclaim(this.memory_, this.offset_);
 
             this.reclaim_ = null;
             GC.SuppressFinalize(this);
         }
 
-        ~BuffSegmMut()
+        ~WriterBuffSegm()
             => this.Dispose();
     }
 
-    internal readonly struct NoReclaim<T>: IReclaimRef<T>, IReclaimMut<T>
+    internal readonly struct NoReclaim<T>: IReclaimReaderBuffSegm<T>, IReclaimWriterBuffSegm<T>
     {
         public void Reclaim(ReadOnlyMemory<T> mem, uint offset)
             => DoNothing();
@@ -292,7 +298,7 @@
     /// 用于为子串提供
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    internal readonly struct ReclaimBuffSegm<T>: IReclaimRef<T>, IReclaimMut<T>
+    internal readonly struct ReclaimBuffSegm<T>: IReclaimReaderBuffSegm<T>, IReclaimWriterBuffSegm<T>
     {
         private readonly IBuffSegm<T> source_;
 
@@ -304,7 +310,7 @@
 
         public void Reclaim(ReadOnlyMemory<T> mem, uint offset)
         {
-            if (this.source_ is IBuffSegmRef<T> source)
+            if (this.source_ is IReaderBuffSegm<T> source)
                 source.Forward(offset);
             else
                 throw this.source_.UnexpectedTypeException();
@@ -312,7 +318,7 @@
 
         public void Reclaim(Memory<T> mem, uint offset)
         {
-            if (this.source_ is IBuffSegmMut<T> source)
+            if (this.source_ is IWriterBuffSegm<T> source)
                 source.Forward(offset);
             else
                 throw this.source_.UnexpectedTypeException();
