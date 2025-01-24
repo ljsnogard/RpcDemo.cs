@@ -1,4 +1,4 @@
-﻿namespace RpcNetSdk
+﻿namespace RpcMuxSdk
 {
     using System;
     using System.Collections.Generic;

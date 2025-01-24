@@ -1,4 +1,4 @@
-﻿namespace RpcNetSdk
+﻿namespace RpcMuxSdk
 {
     using BufferKit;
 
@@ -36,8 +36,14 @@
 
     public sealed class Channel
     {
+        /// <summary>
+        /// Mux 的 Tx
+        /// </summary>
         private readonly BuffTx<byte> tx_;
 
+        /// <summary>
+        /// 从 Mux 中接收的数据的缓冲，已去除头部信息，即只有报文中的 Payload 部分
+        /// </summary>
         private readonly RingBuffer<byte> rxBuff_;
 
         private readonly ushort localPort_;

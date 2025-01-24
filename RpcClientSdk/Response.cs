@@ -2,7 +2,7 @@
 {
     using BufferKit;
 
-    using RpcNetSdk;
+    using RpcMuxSdk;
 
     public readonly partial struct ResponseStatus(ushort code)
     {

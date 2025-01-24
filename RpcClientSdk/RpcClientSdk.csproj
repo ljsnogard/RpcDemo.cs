@@ -13,7 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\BufferKit\BufferKit.csproj" />
-    <ProjectReference Include="..\RpcNetSdk\RpcNetSdk.csproj" />
+    <ProjectReference Include="..\RpcMuxSdk\RpcMuxSdk.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,4 +1,4 @@
-﻿namespace RpcNetSdk
+﻿namespace RpcMuxSdk
 {
     using System.Collections.Generic;
 
@@ -12,6 +12,11 @@
 
     public readonly struct MuxError
     { }
+
+    public readonly struct Descriptor
+    {
+
+    }
 
     /// <summary>
     /// 用于在一个全双工可靠传输信道上同时进行多个活动会话的连接
@@ -66,6 +71,15 @@
             this.localPortsQueue_ = new List<ushort>();
             this.maxPort_ = new Atomic<ushort>();
         }
+
+        public UniTask<OneOf<PortBinder, MuxError>> BindAsync(ushort port, CancellationToken token = default)
+            => throw new NotImplementedException();
+
+        public UniTask<OneOf<Channel, MuxError>> AcceptAsync(Descriptor descriptor, CancellationToken token = default)
+            => throw new NotImplementedException();
+
+        public UniTask<OneOf<BuffTx<byte>, MuxError>> RejectAsync(Descriptor descriptor, CancellationToken token = default)
+            => throw new NotImplementedException();
     }
 
     public sealed partial class SimpleMux

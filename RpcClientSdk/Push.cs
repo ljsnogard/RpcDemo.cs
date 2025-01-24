@@ -7,7 +7,7 @@
     using OneOf;
     using OneOf.Types;
 
-    using RpcNetSdk;
+    using RpcMuxSdk;
 
     public readonly struct PushError
     { }

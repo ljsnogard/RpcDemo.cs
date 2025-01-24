@@ -4,13 +4,11 @@
 
     using OneOf;
 
-    using RpcNetSdk;
+    using RpcMuxSdk;
     using BufferKit;
 
     public readonly struct ClientError
-    {
-
-    }
+    { }
 
     public sealed class Client
     {
@@ -21,7 +19,7 @@
         /// <param name="headers">零个或多个请求头数据</param>
         /// <param name="payload">请求体自身的数据</param>
         /// <returns></returns>
-        public UniTask<OneOf<Response, ClientError>> Request
+        public UniTask<OneOf<Response, ClientError>> RequestAsync
             ( Uri location
             , IAsyncEnumerable<Header> headers
             , BuffRx<byte> payload)
@@ -34,7 +32,7 @@
         /// </summary>
         /// <param name="location"></param>
         /// <returns></returns>
-        public UniTask<OneOf<IPullAgent, ClientError>> Pull(Uri location)
+        public UniTask<OneOf<IPullAgent, ClientError>> PullAsync(Uri location)
         {
             throw new NotImplementedException();
         }
@@ -44,7 +42,7 @@
         /// </summary>
         /// <param name="location"></param>
         /// <returns></returns>
-        public UniTask<OneOf<IPushAgent, ClientError>> Push(Uri location)
+        public UniTask<OneOf<IPushAgent, ClientError>> PushAsync(Uri location)
         {
             throw new NotImplementedException();
         }

@@ -4,7 +4,7 @@
 
     using OneOf;
 
-    using RpcNetSdk;
+    using RpcMuxSdk;
 
     using BufferKit;
 

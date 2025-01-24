@@ -11,7 +11,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RpcClientSdk", "RpcClientSd
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GameRpc", "GameRpc\GameRpc.csproj", "{6504574E-B50C-438A-84FA-2C93B597621F}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RpcNetSdk", "RpcNetSdk\RpcNetSdk.csproj", "{BAFD6BC1-928C-40C6-A0AB-ED60287522C7}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RpcMuxSdk", "RpcMuxSdk\RpcMuxSdk.csproj", "{BAFD6BC1-928C-40C6-A0AB-ED60287522C7}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RpcServerSdk", "RpcServerSdk\RpcServerSdk.csproj", "{2888D232-BD47-400D-99F8-59E5E4E3134F}"
 EndProject

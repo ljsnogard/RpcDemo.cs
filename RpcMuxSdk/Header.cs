@@ -1,4 +1,4 @@
-﻿namespace RpcNetSdk
+﻿namespace RpcMuxSdk
 {
     public readonly struct Header
     {
