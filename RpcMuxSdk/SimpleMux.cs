@@ -1,6 +1,7 @@
 ﻿namespace RpcMuxSdk
 {
     using System.Collections.Generic;
+    using System.Diagnostics.CodeAnalysis;
 
     using BufferKit;
 
@@ -9,6 +10,46 @@
     using DotNext.Threading; // To use Atomic<ushort>
 
     using OneOf;
+
+    public readonly struct Port: IComparable<Port>, IEquatable<Port>
+    {
+        public readonly UInt32 code;
+
+        public Port(UInt32 code)
+            => this.code = code;
+
+        public int CompareTo(Port other)
+            => this.code.CompareTo(other.code);
+
+        public bool TryGetU16PortCode(out UInt16 code)
+        {
+            if (this.code <= UInt16.MaxValue)
+            {
+                code = (UInt16)this.code;
+                return true;
+            }
+            code = default;
+            return false;
+        }
+
+        public bool Equals(Port other)
+            => this.code == other.code;
+
+        public override string ToString()
+            => $"Port({this.code})";
+
+        public override int GetHashCode()
+            => HashCode.Combine(typeof(Port), this.code);
+
+        public override bool Equals([NotNullWhen(true)] object? obj)
+            => obj is Port port && port.code == this.code;
+
+        public static bool operator == (Port lhs, Port rhs)
+            => lhs.code == rhs.code;
+
+        public static bool operator != (Port lhs, Port rhs)
+            => lhs.code != rhs.code;
+    }
 
     public readonly struct MuxError
     { }
@@ -24,21 +65,6 @@
     public sealed partial class SimpleMux
     {
         /// <summary>
-        /// 为了简化问题作出的每个数据包最大长度限制，会话数据缓冲会参考这个数值
-        /// </summary>
-        public static readonly uint MAX_PACKET_SIZE = 512;
-
-        /// <summary>
-        /// 为了简化问题规定每个数据报文的头部长度为8字节，分别是 2字节报文类型, 2字节报文长度, 2字节 local port, 2字节 remote port
-        /// </summary>
-        public static readonly uint PACKET_HEADER_SIZE = 8;
-
-        /// <summary>
-        /// 数据包最大长度和头部长度推算出的数据包荷载长度
-        /// </summary>
-        public static readonly uint MAX_PAYLOAD_SIZE = MAX_PACKET_SIZE - PACKET_HEADER_SIZE;
-
-        /// <summary>
         /// 已编码的外送数据缓冲管道
         /// </summary>
         private readonly RingBuffer<byte> tx_;
@@ -51,7 +77,7 @@
         /// <summary>
         /// Local Port Keyed dictionary
         /// </summary>
-        private readonly SortedDictionary<ushort, OneOf<Channel, Hub>> localPortsDict_;
+        private readonly SortedDictionary<Port, OneOf<Channel, Hub>> localPortsDict_;
 
         /// <summary>
         /// 闲置 port 的先进先出队列，用于重用
@@ -67,7 +93,7 @@
         {
             this.tx_ = tx;
             this.rx_ = rx;
-            this.localPortsDict_ = new SortedDictionary<ushort, OneOf<Channel, Hub>>();
+            this.localPortsDict_ = new SortedDictionary<Port, OneOf<Channel, Hub>>();
             this.localPortsQueue_ = new List<ushort>();
             this.maxPort_ = new Atomic<ushort>();
         }
@@ -84,17 +110,46 @@
 
     public sealed partial class SimpleMux
     {
-        public readonly struct PacketHeader
+        internal readonly struct PacketHeader
         {
-            public ushort Flags { get; init; }
-            public ushort PayloadSize { get; init; }
-            public ushort LocalPort { get; init; }
-            public ushort RemotePort {  get; init; }
+            public byte Flags { get; init; }
+            public uint PayloadSize { get; init; }
+            public Port SrcPort { get; init; }
+            public Port DstPort { get; init; }
 
-            //public static readonly byte K_FLAGS_PACK_NORM = 0b_0000_0000;
-            public static readonly byte K_FLAGS_PACK_HEAD = 0b_0000_0001;
-            public static readonly byte K_FLAGS_PACK_TAIL = 0b_0000_0010;
-            //public static readonly byte K_FLAGS_PACK_ONCE = 0b_0000_0011;
+            public uint Sequence { get; init; }
+
+            public ushort ExtraHeaderSize { get; init; }
+
+            /// <summary>
+            /// 指示报文中表示发送端 port 要使用的数据类型, 0双字节, 1四字节
+            /// </summary>
+            public static readonly byte K_B0_SRCPORT_REPR = 0b_0000_0001;
+
+            /// <summary>
+            /// 指示报文中表示接收端 port 要使用的数据类型, 0双字节, 1四字节
+            /// </summary>
+            public static readonly byte K_B0_DSTPORT_REPR = 0b_0000_0010;
+            
+            /// <summary>
+            /// 指示报文中表示荷载长度要使用的数据类型, 0双字节, 1四字节
+            /// </summary>
+            public static readonly byte K_B0_PAYLOAD_REPR = 0b_0000_0100;
+
+            /// <summary>
+            /// 指示报文中表示报文序列号的数据类型, 0双字节, 1四字节
+            /// </summary>
+            public static readonly byte K_B0_SEQSIZE_REPR = 0b_0000_1000;
+
+            /// <summary>
+            /// 指示本数据报荷载是数据或是信令, 若为信令则置1
+            /// </summary>
+            public static readonly byte K_B0_CHANNEL_SIGN = 0b_0001_0000;
+
+            /// <summary>
+            /// 指示本数据报是否包含附加头部的长度, 如无附加头部长度则为 0
+            /// </summary>
+            public static readonly byte K_B0_EXTRA_HEADER = 0b_1100_0000;
 
             public static void WriteU16BE(ushort value, Span<byte> buffer)
             {
@@ -112,27 +167,14 @@
                 return (ushort)(msp + lsp);
             }
 
-            public static PacketHeader ReadBigEndianBytes(ReadOnlySpan<byte> buffer)
+            public static async UniTask<OneOf<PacketHeader, IBufferError>> PeekHeaderAsync(BuffRx<byte> rx, CancellationToken token = default)
             {
-                var flags = PacketHeader.ReadU16BE(buffer);
-                var payloadSize = PacketHeader.ReadU16BE(buffer.Slice(2));
-                var localPort = PacketHeader.ReadU16BE(buffer.Slice(4));
-                var remotePort = PacketHeader.ReadU16BE(buffer.Slice(6));
-                return new PacketHeader
-                {
-                    Flags = flags,
-                    PayloadSize = payloadSize,
-                    LocalPort = localPort,
-                    RemotePort = remotePort
-                };
-            }
+                const uint FLAGS_SIZE = 1;
+                var maybeFlags = await rx.PeekAsync(0, token);
+                if (!maybeFlags.TryPickT0(out var flagsSegm, out var error))
+                    return OneOf<PacketHeader, IBufferError>.FromT1(error);
 
-            public void WriteBigEndianBytes(Span<byte> buffer)
-            {
-                PacketHeader.WriteU16BE(this.Flags, buffer);
-                PacketHeader.WriteU16BE(this.PayloadSize, buffer.Slice(2));
-                PacketHeader.WriteU16BE(this.LocalPort, buffer.Slice(4));
-                PacketHeader.WriteU16BE(this.RemotePort, buffer.Slice(6));
+                throw new NotImplementedException();
             }
         }
     }

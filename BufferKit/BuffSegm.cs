@@ -65,12 +65,7 @@
             => HashCode.Combine(typeof(BuffSegmError), this.code_);
 
         public override bool Equals([NotNullWhen(true)] object? obj)
-        {
-            if (obj is BuffSegmError other)
-                return this.code_ == other.code_;
-            else
-                return false;
-        }
+            => obj is BuffSegmError err && this.code_ == err.code_;
     }
 
     public sealed class ReaderBuffSegm<T>: IReaderBuffSegm<T>, IDisposable

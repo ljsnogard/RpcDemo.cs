@@ -41,6 +41,8 @@
         /// </summary>
         private readonly BuffTx<byte> tx_;
 
+        private readonly RingBuffer<byte> txBuff_;
+
         /// <summary>
         /// 从 Mux 中接收的数据的缓冲，已去除头部信息，即只有报文中的 Payload 部分
         /// </summary>
@@ -55,11 +57,13 @@
 
         public Channel
             ( BuffTx<byte> tx
+            , uint txBuffSize
             , uint rxBuffSize
             , ushort localPort_
             , ushort remotePort_)
         {
             this.tx_ = tx;
+            this.txBuff_ = new RingBuffer<byte>(txBuffSize);
             this.rxBuff_ = new RingBuffer<byte>(rxBuffSize);
             this.localPort_ = localPort_;
             this.remotePort_ = remotePort_;
@@ -79,48 +83,10 @@
         /// <para>3. 如果发送方故障导致没有正确发送末段数据, 接收方将只能死等; </para>
         /// <para>4. 数据切分成数据包的大小完全取决于 data 取出的大小, 有可能有效荷载太小导致传输效率低; </para>
         /// </remarks>
-        public async UniTask<OneOf<uint, ChannelError>> SendAsync(BuffRx<byte> data, CancellationToken token = default)
-        {
-            await Task.Yield();
-            throw new NotImplementedException();
+        public UniTask<OneOf<uint, ChannelError>> SendAsync(BuffRx<byte> data, CancellationToken token = default)
+            => throw new NotImplementedException();
 
-            static async UniTask<OneOf<uint, ChannelError>> SendPacketAsync
-                ( BuffTx<byte> muxTx
-                , SimpleMux.PacketHeader header
-                , ReaderBuffSegm<byte> payload
-                , CancellationToken token = default)
-            {
-                Debug.Assert(payload.Length == header.PayloadSize);
-
-                var headerBuff = new Memory<byte>(new byte[SimpleMux.PACKET_HEADER_SIZE]);
-                header.WriteBigEndianBytes(headerBuff.Span);
-
-                var dumpResult = await muxTx.DumpAsync(headerBuff, token);
-                if (!dumpResult.TryPickT0(out var dumpHeaderSize, out var dumpError))
-                    return new ChannelError { InnerError = dumpError };
-                Debug.Assert(dumpHeaderSize == SimpleMux.PACKET_HEADER_SIZE);
-
-                // 发送 payload
-                while (payload.Length > 0)
-                {
-                    var writeResult = await muxTx.WriteAsync(payload.Length, token);
-                    if (!writeResult.TryPickT0(out var dstSegm, out var writeErr))
-                        throw writeErr.AsException();
-
-                    var maybeSrcSegm = await payload.SliceAsync(dstSegm.Length, token);
-                    if (!maybeSrcSegm.TryPickT0(out var srcSegm, out var sliceErr))
-                        return new ChannelError { InnerError = sliceErr };
-
-                    using (srcSegm)
-                    {
-                        dstSegm.CopyFrom(srcSegm.Memory);
-                    }
-                }
-                return header.PayloadSize;
-            }
-        }
-
-        public async UniTask<OneOf<ReaderBuffSegm<byte>, ChannelError>> RecvAsync(uint length, CancellationToken token = default)
+        public async UniTask<OneOf<ReadOnlyMemory<ReaderBuffSegm<byte>>, ChannelError>> RecvAsync(uint length, CancellationToken token = default)
         {
             var result = await this.rxBuff_.ReadAsync(length, token);
             return result.MapT1((e) => new ChannelError { InnerError = e });

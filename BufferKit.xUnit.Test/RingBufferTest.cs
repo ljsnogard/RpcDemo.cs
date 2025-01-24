@@ -15,19 +15,27 @@
             var ringBuff = new RingBuffer<byte>(16);
             for (uint i = 0; i < ringBuff.Capacity; i++)
             {
-                var maybeTxBuff = await ringBuff.WriteAsync(i);
-                if (!maybeTxBuff.TryPickT0(out var txBuff, out var error))
+                var maybeTxBuffArr = await ringBuff.WriteAsync(i);
+                if (!maybeTxBuffArr.TryPickT0(out var txBuffArr, out var error))
                     throw error.AsException();
-                Assert.True(txBuff.Length <= i);
-                var txMem = txBuff.Memory;
-                txBuff.Dispose();
+                uint txLen = 0;
+                for (var iTx = 0; iTx < txBuffArr.Length; iTx++)
+                {
+                    using var txBuff = txBuffArr.Span[iTx];
+                    txLen += txBuff.Length;
+                }
+                Assert.True(txLen < i);
 
-                var maybeRxBuff = await ringBuff.ReadAsync(i);
-                if (!maybeRxBuff.TryPickT0(out var rxBuff, out error))
+                var maybeRxBuffArr = await ringBuff.ReadAsync(i);
+                if (!maybeRxBuffArr.TryPickT0(out var rxBuffArr, out error))
                     throw error.AsException();
-                Assert.True(rxBuff.Length <= i);
-                var rxMem = rxBuff.Memory;
-                rxBuff.Dispose();
+                uint rxLen = 0;
+                for (var iRx = 0; iRx < txBuffArr.Length; iRx++)
+                {
+                    using var rxBuff = rxBuffArr.Span[iRx];
+                    rxLen += rxBuff.Length;
+                }
+                Assert.True(rxLen < i);
             }
         }
 
@@ -60,7 +68,7 @@
                 while (rxCount < count)
                 {
                     var mem = new Memory<byte>([0]);
-                    var tryRead = await rx.FillAsync(mem);
+                    var tryRead = await rx.ReadAsync(mem);
                     if (!tryRead.TryPickT0(out var readCount, out var error))
                         throw error.AsException();
                     Assert.Equal((uint)1, readCount);
@@ -100,7 +108,7 @@
                 var buff = (new int[1]).AsMemory();
                 while (readNum < maxNum)
                 {
-                    var r = await rx.FillAsync(buff);
+                    var r = await rx.ReadAsync(buff);
                     Assert.True(r.IsT0);
                     Assert.Equal((uint)buff.Length, r.AsT0);
                     Assert.Equal(readNum++, buff.Span[0]);

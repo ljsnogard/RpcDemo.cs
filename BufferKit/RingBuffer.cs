@@ -1,5 +1,6 @@
 ﻿namespace BufferKit
 {
+    using System;
     using System.Diagnostics.CodeAnalysis;
 
     using Cysharp.Threading.Tasks;
@@ -34,15 +35,16 @@
             => $"RingBufferError.{NAMES.Span[(int)this.code_]}";
 
         public override bool Equals([NotNullWhen(true)] object? obj)
-        {
-            if (obj is RingBufferError other)
-                return this.code_ == other.code_;
-            else
-                return false;
-        }
+            => obj is RingBufferError err && this.code_ == err.code_;
 
         public override int GetHashCode()
             => HashCode.Combine(typeof(RingBufferError), this.code_);
+    }
+
+    public readonly struct IoPosition
+    {
+        public uint Offset { get; init; }
+        public uint Length { get; init; }
     }
 
     public sealed partial class RingBuffer<T> : IBuffer<T>
@@ -126,32 +128,83 @@
         /// 可供写者填充的数据量
         /// </summary>
         public uint WriterSize
-        {
-            get
-            {
-                lock (this)
-                {
-                    if (this.inversed_)
-                        return this.readerOffset_ - this.writerOffset_;
-                    else
-                        return this.capacity_ - this.writerOffset_;
-                }
-            }
-        }
+            => this.GetWriterPositions().SumLength();
 
         /// <summary>
         /// 可供读者消费的数据量
         /// </summary>
         public uint ReaderSize
+            => this.GetReaderPositions().SumLength();
+
+        public ReadOnlyMemory<IoPosition> GetReaderPositions()
         {
-            get
+            lock (this)
             {
-                lock (this)
+                if (this.inversed_)
                 {
-                    if (this.inversed_)
-                        return this.readerOffset_ == this.writerOffset_ ? this.capacity_ : this.readerOffset_ - this.writerOffset_;
+                    var p0 = new IoPosition
+                    {
+                        Offset = this.readerOffset_,
+                        Length = this.capacity_ - this.readerOffset_,
+                    };
+                    var p1 = new IoPosition
+                    {
+                        Offset = 0,
+                        Length = this.writerOffset_,
+                    };
+                    if (p0.Length == 0)
+                        return ReadOnlyMemory<IoPosition>.Empty;
+                    if (p1.Length == 0)
+                        return new IoPosition[] { p0 };
                     else
-                        return this.writerOffset_ - this.readerOffset_;
+                        return new IoPosition[] { p0, p1 };
+                }
+                else
+                {
+                    var p0 = new IoPosition
+                    {
+                        Offset = this.readerOffset_,
+                        Length = this.writerOffset_ - this.readerOffset_,
+                    };
+                    if (p0.Length == 0)
+                        return ReadOnlyMemory<IoPosition>.Empty;
+                    else
+                        return new IoPosition[] { p0 };
+                }
+            }
+        }
+
+        public ReadOnlyMemory<IoPosition> GetWriterPositions()
+        {
+            lock (this)
+            {
+                if (this.inversed_)
+                {
+                    var p0 = new IoPosition
+                    {
+                        Offset = this.writerOffset_, 
+                        Length = this.readerOffset_ - this.writerOffset_,
+                    };
+                    return new IoPosition[] { p0 };
+                }
+                else
+                {
+                    var p0 = new IoPosition
+                    {
+                        Offset = this.writerOffset_,
+                        Length = this.capacity_ - this.writerOffset_,
+                    };
+                    var p1 = new IoPosition
+                    {
+                        Offset = 0,
+                        Length = this.readerOffset_,
+                    };
+                    if (p0.Length == 0)
+                        return ReadOnlyMemory<IoPosition>.Empty;
+                    if (p1.Length == 0)
+                        return new IoPosition[] { p0 };
+                    else
+                        return new IoPosition[] { p0, p1 };
                 }
             }
         }
@@ -162,29 +215,51 @@
         /// <param name="length"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public async UniTask<OneOf<ReaderBuffSegm<T>, RingBufferError>> ReadAsync(uint length, CancellationToken token = default)
+        public UniTask<OneOf<ReadOnlyMemory<ReaderBuffSegm<T>>, RingBufferError>> ReadAsync(uint length, CancellationToken token = default)
+            => this.RxAsync_(offset: 0, length, CreateReaderSegm, token);
+        
+
+        public UniTask<OneOf<ReadOnlyMemory<ReadOnlyMemory<T>>, RingBufferError>> PeekAsync(uint offset, CancellationToken token = default)
+            => this.RxAsync_(offset, this.capacity_, (m) => m, token);
+
+        public UniTask<OneOf<uint, RingBufferError>> ReaderSkipAsync(uint length, CancellationToken token = default)
+            => throw new NotImplementedException();
+
+        private ReaderBuffSegm<T> CreateReaderSegm(ReadOnlyMemory<T> m)
+            => new ReaderBuffSegm<T>(new ReclaimReaderBuffSegm(this), m);
+
+        private async UniTask<OneOf<ReadOnlyMemory<S>, RingBufferError>> RxAsync_<S>
+            ( uint offset
+            , uint length
+            , Func<ReadOnlyMemory<T>, S> createSlice
+            , CancellationToken token)
         {
             if (this.readerDemand_.TryPickT1(out var error, out var _) && error == RingBufferError.Closed)
                 return error;
-            if (length == 0)
-                return new ReaderBuffSegm<T>(ReadOnlyMemory<T>.Empty);
+            if (offset >= this.capacity_)
+                return RingBufferError.Incapable;
             var succ = false;
             try
             {
                 await this.readerSema_.WaitAsync(token);
                 while (true)
                 {
-                    var readerSize = this.ReaderSize;
-                    if (readerSize == 0 && this.IsTxClosed)
+                    var positions = this.GetReaderPositions();
+                    if (positions.IsEmpty && this.IsTxClosed)
                         return RingBufferError.Closed;
 
-                    if (readerSize > 0)
+                    if (positions.SumLength() > offset)
                     {
-                        var sliceLen = Math.Min(length, readerSize);
-                        var memory = this.memory_.Slice((int)this.readerOffset_, (int)sliceLen);
-                        var reclaim = new ReclaimReaderBuffSegm(this);
-                        succ = true;
-                        return new ReaderBuffSegm<T>(reclaim, memory);
+                        var s0 = createSlice(this.memory_.Slice(in positions.Span[0]));
+                        if (positions.Length > 1)
+                        {
+                            var s1 = createSlice(this.memory_.Slice(in positions.Span[1]));
+                            return new ReadOnlyMemory<S>([s0, s1]);
+                        }
+                        else
+                        {
+                            return new ReadOnlyMemory<S>([s0]);
+                        }
                     }
                     Demand demand;
                     lock (this)
@@ -205,7 +280,7 @@
             {
                 if (succ && this.readerDemand_.IsT0)
                     this.readerDemand_ = RingBufferError.Idle;
-                    
+
                 if (!succ && this.readerSema_.CurrentCount == 0)
                     this.readerSema_.Release();
             }
@@ -217,29 +292,34 @@
         /// <param name="length"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public async UniTask<OneOf<WriterBuffSegm<T>, RingBufferError>> WriteAsync(uint length, CancellationToken token = default)
+        public async UniTask<OneOf<ReadOnlyMemory<WriterBuffSegm<T>>, RingBufferError>> WriteAsync(uint length, CancellationToken token = default)
         {
             if (this.writerDemand_.TryPickT1(out var error, out var _) && error == RingBufferError.Closed)
                 return error;
             if (length == 0)
-                return new WriterBuffSegm<T>(Memory<T>.Empty);
+                return ReadOnlyMemory<WriterBuffSegm<T>>.Empty;
             var succ = false;
             try
             {
                 await this.writerSema_.WaitAsync(token);
                 while (true)
                 {
-                    var writerSize = this.WriterSize;
-                    if (writerSize == 0 && this.IsRxClosed)
+                    var positions = this.GetWriterPositions();
+                    if (positions.IsEmpty && this.IsRxClosed)
                         return RingBufferError.Closed;
 
-                    if (writerSize > 0)
+                    if (positions.SumLength() > 0)
                     {
-                        var sliceLen = Math.Min(length, writerSize);
-                        var memory = this.memory_.Slice((int)this.writerOffset_, (int)sliceLen);
-                        var reclaim = new ReclaimWriterBuffSegm(this);
-                        succ = true;
-                        return new WriterBuffSegm<T>(reclaim, memory);
+                        var s0 = new WriterBuffSegm<T>(new ReclaimWriterBuffSegm(this), this.memory_.Slice(in positions.Span[0]));
+                        if (positions.Length > 1)
+                        {
+                            var s1 = new WriterBuffSegm<T>(new ReclaimWriterBuffSegm(this), this.memory_.Slice(in positions.Span[1]));
+                            return new ReadOnlyMemory<WriterBuffSegm<T>>([s0, s1]);
+                        }
+                        else
+                        {
+                            return new ReadOnlyMemory<WriterBuffSegm<T>>([s0]);
+                        }
                     }
                     Demand demand;
                     lock (this)
@@ -286,16 +366,28 @@
             }
         }
 
-        async UniTask<OneOf<ReaderBuffSegm<T>, IBufferError>> IBuffer<T>.ReadAsync(uint length, CancellationToken token)
+        async UniTask<OneOf<ReadOnlyMemory<ReaderBuffSegm<T>>, IBufferError>> IBuffer<T>.ReadAsync(uint length, CancellationToken token)
         {
             var r = await this.ReadAsync(length, token);
-            return r.MapT1((e) => (IBufferError)e);
+            return r.MapT1((e) => e as IBufferError);
         }
 
-        async UniTask<OneOf<WriterBuffSegm<T>, IBufferError>> IBuffer<T>.WriteAsync(uint length, CancellationToken token)
+        async UniTask<OneOf<ReadOnlyMemory<ReadOnlyMemory<T>>, IBufferError>> IBuffer<T>.PeekAsync(uint offset, System.Threading.CancellationToken token)
+        {
+            var r = await this.PeekAsync(offset, token);
+            return r.MapT1((e) => e as IBufferError);
+        }
+
+        async UniTask<OneOf<uint, IBufferError>> IBuffer<T>.ReaderSkipAsync(uint length, System.Threading.CancellationToken token)
+        {
+            var r = await this.ReaderSkipAsync(length, token);
+            return r.MapT1((e) => e as IBufferError);
+        }
+
+        async UniTask<OneOf<ReadOnlyMemory<WriterBuffSegm<T>>, IBufferError>> IBuffer<T>.WriteAsync(uint length, CancellationToken token)
         {
             var r = await this.WriteAsync(length, token);
-            return r.MapT1((e) => (IBufferError)e);
+            return r.MapT1((e) => e as IBufferError);
         }
 
         static void TrySetRxClosed(IBuffer<T> buffer)
@@ -410,5 +502,19 @@
                 this.buffer_.writerSema_.Release();
             }
         }
+    }
+
+    internal static class IoPositionsArrayExtensions
+    {
+        public static uint SumLength(in this ReadOnlyMemory<IoPosition> a)
+        {
+            uint s = 0;
+            for (var i = 0; i < a.Length; ++i)
+                s += a.Span[i].Length;
+            return s;
+        }
+
+        public static Memory<T> Slice<T>(in this Memory<T> m, in IoPosition p)
+            => m.Slice((int)p.Offset, (int)p.Length);
     }
 }
