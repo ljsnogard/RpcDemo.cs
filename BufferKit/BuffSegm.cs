@@ -1,5 +1,6 @@
 ﻿namespace BufferKit
 {
+    using System;
     using System.Diagnostics.CodeAnalysis; // to use [NotNullWhen()] for override object.Equals
 
     using Cysharp.Threading.Tasks;
@@ -88,9 +89,9 @@
 
         private ReaderBuffSegm(IReclaimReadOnlyMemory<T> reclaim, ReadOnlyMemory<T> memory, uint offset)
         {
-            this.reclaim_ = reclaim;
-            this.semaphore_ = new SemaphoreSlim(1, 1);
             this.memory_ = memory;
+            this.semaphore_ = new SemaphoreSlim(1, 1);
+            this.reclaim_ = reclaim;
             this.offset_ = offset;
         }
 
@@ -100,14 +101,20 @@
         /// <summary>
         /// 获取并消耗所有未读取缓冲区，操作完成后此对象 Length 属性将变为0.
         /// </summary>
-        public ReadOnlyMemory<T> Memory
+        public ReadOnlyMemory<T> ReadAll()
+            => this.ReadSlice(this.Length);
+
+        /// <summary>
+        /// 获取并消耗指定长度的已填充缓冲区，操作完成后此对象 Length 将相应减少.
+        /// </summary>
+        public ReadOnlyMemory<T> ReadSlice(uint length)
         {
-            get
-            {
-                var m = this.memory_.Slice((int)this.offset_);
-                this.offset_ += (uint)m.Length;
-                return m;
-            }
+            if (this.Length < length)
+                length = this.Length;
+
+            var m = this.memory_.Slice((int)this.offset_, (int)length);
+            this.offset_ += length;
+            return m;
         }
 
         public uint CopyTo(Memory<T> target)
@@ -217,9 +224,9 @@
 
         private WriterBuffSegm(IReclaimMutableMemory<T> reclaim, Memory<T> memory, uint offset)
         {
-            this.reclaim_ = reclaim;
-            this.semaphore_ = new SemaphoreSlim(1, 1);
             this.memory_ = memory;
+            this.semaphore_ = new SemaphoreSlim(1, 1);
+            this.reclaim_ = reclaim;
             this.offset_ = offset;
         }
 
@@ -230,16 +237,22 @@
             => (uint)this.memory_.Length - this.offset_;
 
         /// <summary>
-        /// 获取并消耗所有未填充缓冲区，操作完成后此对象 Length 属性将变为0.
+        /// 获取并消耗所有未读取缓冲区，操作完成后此对象 Length 属性将变为0.
         /// </summary>
-        public Memory<T> Memory
+        public Memory<T> WriteAll()
+            => this.WriteSlice(this.Length);
+
+        /// <summary>
+        /// 获取并消耗指定长度的未填充缓冲区，操作完成后此对象 Length 将相应减少.
+        /// </summary>
+        public Memory<T> WriteSlice(uint length)
         {
-            get
-            {
-                var m = this.memory_.Slice((int)this.offset_);
-                this.offset_ += (uint)m.Length;
-                return m;
-            }
+            if (this.Length < length)
+                length = this.Length;
+
+            var m = this.memory_.Slice((int)this.offset_, (int)length);
+            this.offset_ += length;
+            return m;
         }
 
         public async UniTask<OneOf<uint, BuffSegmError>> CopyFromAsync(ReaderBuffSegm<T> source)
@@ -250,7 +263,7 @@
                 return error;
             using (srcSlice)
             {
-                var srcMem = srcSlice.Memory;
+                var srcMem = srcSlice.ReadAll();
                 var dstMem = this.memory_.Slice((int)this.offset_, (int)copyLen);
                 srcMem.CopyTo(dstMem);
                 return copyLen;

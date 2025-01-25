@@ -134,7 +134,7 @@
                     using var txBuff = txArr.Span[i];
                     Debug.Assert((uint)source.Length - filledCount >= txBuff.Length);
                     var unfilledSource = source.Slice((int)filledCount, (int)txBuff.Length);
-                    filledCount += txBuff.Length;
+                    filledCount += txBuff.CopyFrom(unfilledSource); ;
                 }
             }
             return filledCount;

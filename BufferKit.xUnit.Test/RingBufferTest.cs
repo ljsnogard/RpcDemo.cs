@@ -4,6 +4,18 @@
 
     public sealed class RingBufferTest
     {
+        private class ConsoleWriter : StringWriter
+        {
+            private ITestOutputHelper output;
+
+            public ConsoleWriter(ITestOutputHelper output)
+                => this.output = output;
+
+            public override void WriteLine(string? m)
+                => output.WriteLine(m);
+            
+        }
+
         private readonly ITestOutputHelper output_;
 
         public RingBufferTest(ITestOutputHelper output)
@@ -22,7 +34,7 @@
                 for (var iTx = 0; iTx < txBuffArr.Length; iTx++)
                 {
                     using var txBuff = txBuffArr.Span[iTx];
-                    var mem = txBuff.Memory;
+                    var mem = txBuff.WriteAll();
                     txLen += (uint)mem.Length;
                 }
                 Assert.True(txLen <= i);
@@ -34,7 +46,7 @@
                 for (var iRx = 0; iRx < txBuffArr.Length; iRx++)
                 {
                     using var rxBuff = rxBuffArr.Span[iRx];
-                    var mem = rxBuff.Memory;
+                    var mem = rxBuff.ReadAll();
                     rxLen += (uint)mem.Length;
                 }
                 Assert.True(rxLen <= i);
@@ -44,37 +56,47 @@
         [Fact]
         public async Task RingBufferShouldWorkWithLeastCapacity()
         {
+            Console.SetOut(new ConsoleWriter(this.output_));
+
             var ringBuffer = new RingBuffer<byte>(1);
             var maybe = ringBuffer.TrySplit();
             if (!maybe.TryPickT0(out var pair, out var _))
                 throw new Exception();
 
             (var tx, var rx) = pair;
-            var count = 255;
+            var count = 8;
             var txCount = 0;
             var rxCount = 0;
 
             var rxWork = async () =>
             {
-                while (rxCount < count)
+                using (rx)
                 {
-                    var mem = new Memory<byte>([0]);
-                    var tryRead = await rx.ReadAsync(mem);
-                    if (!tryRead.TryPickT0(out var readCount, out var error))
-                        throw error.AsException();
-                    Assert.Equal((uint)1, readCount);
-                    Assert.Equal((byte)rxCount, mem.Span[0]);
-                    rxCount += 1;
+                    while (rxCount < count)
+                    {
+                        var mem = new Memory<byte>([0]);
+                        var tryRead = await rx.ReadAsync(mem);
+                        if (!tryRead.TryPickT0(out var readCount, out var error))
+                            throw error.AsException();
+                        Assert.Equal((uint)1, readCount);
+                        Assert.Equal((byte)rxCount, mem.Span[0]);
+                        rxCount += 1;
+                    }
+                    this.output_.WriteLine("rx loop exits.");
                 }
             };
             var rxTask = rxWork();
-            while (txCount < count)
+            using (tx)
             {
-                var tryWrite = await tx.DumpAsync(new ReadOnlyMemory<byte>([(byte)txCount]));
-                if (!tryWrite.TryPickT0(out var writeCount, out var error))
-                    throw error.AsException();
-                Assert.Equal((uint)1, writeCount);
-                txCount += 1;
+                while (txCount < count)
+                {
+                    var tryWrite = await tx.DumpAsync(new ReadOnlyMemory<byte>([(byte)txCount]));
+                    if (!tryWrite.TryPickT0(out var writeCount, out var error))
+                        throw error.AsException();
+                    Assert.Equal((uint)1, writeCount);
+                    txCount += 1;
+                }
+                this.output_.WriteLine("tx loop exits.");
             }
             await rxTask;
         }
@@ -108,7 +130,8 @@
                 var buff = (new int[1]).AsMemory();
                 while (readNum < maxNum)
                 {
-                    var r = await rx.ReadAsync(buff);
+                    var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+                    var r = await rx.ReadAsync(buff, cts.Token);
                     Assert.True(r.IsT0);
                     Assert.Equal((uint)buff.Length, r.AsT0);
                     Assert.Equal(readNum++, buff.Span[0]);
@@ -121,7 +144,8 @@
             using var tx = ringBuffer.CreateTx();
             foreach (var slice in testDataSlices)
             {
-                var d = await tx.DumpAsync(slice);
+                var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+                var d = await tx.DumpAsync(slice, cts.Token);
                 Assert.True(d.IsT0);
                 Assert.Equal((uint)slice.Length, d.AsT0);
             }

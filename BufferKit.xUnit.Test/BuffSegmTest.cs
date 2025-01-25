@@ -9,13 +9,13 @@ namespace BufferKit.xUnit.Test
             using (var segmRef = new ReaderBuffSegm<byte>(new ReadOnlyMemory<byte>(data)))
             {
                 Assert.Equal((uint)data.Length, segmRef.Length);
-                var memory = segmRef.Memory;
+                var memory = segmRef.ReadAll();
                 Assert.Equal((uint)0, segmRef.Length);
             }
             using (var segmMut = new WriterBuffSegm<byte>(new Memory<byte>(data)))
             {
                 Assert.Equal((uint)data.Length, segmMut.Length);
-                var memory = segmMut.Memory;
+                var memory = segmMut.WriteAll();
                 Assert.Equal((uint)0, segmMut.Length);
             }
         }
@@ -41,7 +41,7 @@ namespace BufferKit.xUnit.Test
                 using (slice)
                 {
                     Assert.True(slice.Length <= c);
-                    foreach (var b in slice.Memory.ToArray())
+                    foreach (var b in slice.ReadAll().ToArray())
                     {
                         Assert.Equal(i, b);
                         ++i;
@@ -72,7 +72,7 @@ namespace BufferKit.xUnit.Test
                 using (slice)
                 {
                     Assert.True(slice.Length <= c);
-                    foreach (var b in slice.Memory.ToArray())
+                    foreach (var b in slice.WriteAll().ToArray())
                     {
                         Assert.Equal(i, b);
                         ++i;

@@ -336,6 +336,8 @@
                         }
                         else
                         {
+                            if (s0.Length == 0)
+                                throw new Exception("Fuck you");
                             return new ReadOnlyMemory<WriterBuffSegm<T>>([s0]);
                         }
                     }
