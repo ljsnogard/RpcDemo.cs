@@ -22,9 +22,10 @@
                 for (var iTx = 0; iTx < txBuffArr.Length; iTx++)
                 {
                     using var txBuff = txBuffArr.Span[iTx];
-                    txLen += txBuff.Length;
+                    var mem = txBuff.Memory;
+                    txLen += (uint)mem.Length;
                 }
-                Assert.True(txLen < i);
+                Assert.True(txLen <= i);
 
                 var maybeRxBuffArr = await ringBuff.ReadAsync(i);
                 if (!maybeRxBuffArr.TryPickT0(out var rxBuffArr, out error))
@@ -33,14 +34,15 @@
                 for (var iRx = 0; iRx < txBuffArr.Length; iRx++)
                 {
                     using var rxBuff = rxBuffArr.Span[iRx];
-                    rxLen += rxBuff.Length;
+                    var mem = rxBuff.Memory;
+                    rxLen += (uint)mem.Length;
                 }
-                Assert.True(rxLen < i);
+                Assert.True(rxLen <= i);
             }
         }
 
         [Fact]
-        public async Task RingBufferShouldWorkForSingleUnit()
+        public async Task RingBufferShouldWorkWithLeastCapacity()
         {
             var ringBuffer = new RingBuffer<byte>(1);
             var maybe = ringBuffer.TrySplit();
@@ -52,18 +54,7 @@
             var txCount = 0;
             var rxCount = 0;
 
-            var txTask = async () =>
-            {
-                while (txCount < count)
-                {
-                    var tryWrite = await tx.DumpAsync(new ReadOnlyMemory<byte>([(byte)txCount]));
-                    if (!tryWrite.TryPickT0(out var writeCount, out var error))
-                        throw error.AsException();
-                    Assert.Equal((uint)1, writeCount);
-                    txCount += 1;
-                }
-            };
-            var rxTask = async () =>
+            var rxWork = async () =>
             {
                 while (rxCount < count)
                 {
@@ -76,7 +67,16 @@
                     rxCount += 1;
                 }
             };
-            await Task.WhenAll(txTask(), rxTask());
+            var rxTask = rxWork();
+            while (txCount < count)
+            {
+                var tryWrite = await tx.DumpAsync(new ReadOnlyMemory<byte>([(byte)txCount]));
+                if (!tryWrite.TryPickT0(out var writeCount, out var error))
+                    throw error.AsException();
+                Assert.Equal((uint)1, writeCount);
+                txCount += 1;
+            }
+            await rxTask;
         }
 
         [Theory]

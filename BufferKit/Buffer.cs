@@ -31,7 +31,7 @@
         /// <param name="offset">要跳过的数据偏移量</param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public UniTask<OneOf<ReadOnlyMemory<ReadOnlyMemory<T>>, IBufferError>> PeekAsync(uint offset, CancellationToken token = default);
+        public UniTask<OneOf<ReadOnlyMemory<PeekerBuffSegm<T>>, IBufferError>> PeekAsync(uint offset, CancellationToken token = default);
 
         /// <summary>
         /// 忽略内容，直接消耗不大于指定长度的已填充数据，通常与 PeekAsync 搭配使用。
@@ -205,7 +205,7 @@
         /// </summary>
         /// <param name="token"></param>
         /// <returns></returns>
-        public UniTask<OneOf<ReadOnlyMemory<ReadOnlyMemory<T>>, IBufferError>> PeekAsync(uint offset, CancellationToken token = default)
+        public UniTask<OneOf<ReadOnlyMemory<PeekerBuffSegm<T>>, IBufferError>> PeekAsync(uint offset, CancellationToken token = default)
         {
             if (this.buff_ is IBuffer<T> buff)
                 return buff.PeekAsync(offset, token);
@@ -265,9 +265,7 @@
                         break;
                     var copyLen = Math.Min(unfilledLength, (uint)source.Length);
                     var dst = target.Slice((int)filledCount, (int)copyLen);
-                    var src = source.Slice(0, (int)copyLen);
-                    src.CopyTo(dst);
-                    filledCount += copyLen;
+                    filledCount += source.CopyTo(dst);
                 }
             }
             return filledCount;

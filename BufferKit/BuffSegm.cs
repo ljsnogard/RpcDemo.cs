@@ -9,12 +9,12 @@
     public interface IReclaim<T>
     { }
 
-    public interface IReclaimReaderBuffSegm<T>: IReclaim<T>
+    public interface IReclaimReadOnlyMemory<T>: IReclaim<T>
     {
         public void Reclaim(ReadOnlyMemory<T> mem, uint offset);
     }
 
-    public interface IReclaimWriterBuffSegm<T>: IReclaim<T>
+    public interface IReclaimMutableMemory<T>: IReclaim<T>
     {
         public void Reclaim(Memory<T> mem, uint offset);
     }
@@ -22,7 +22,9 @@
     #region IBuffSegm variants
 
     internal interface IBuffSegm<T>
-    { }
+    {
+        public uint Length { get; }
+    }
 
     internal interface IReaderBuffSegm<T>: IBuffSegm<T>
     {
@@ -74,17 +76,17 @@
 
         private readonly SemaphoreSlim semaphore_;
 
-        private IReclaimReaderBuffSegm<T>? reclaim_;
+        private IReclaimReadOnlyMemory<T>? reclaim_;
 
         private uint offset_;
 
         public ReaderBuffSegm(ReadOnlyMemory<T> memory) : this(new NoReclaim<T>(), memory, 0)
         { }
 
-        public ReaderBuffSegm(IReclaimReaderBuffSegm<T> reclaim, ReadOnlyMemory<T> memory) : this(reclaim, memory, 0)
+        public ReaderBuffSegm(IReclaimReadOnlyMemory<T> reclaim, ReadOnlyMemory<T> memory) : this(reclaim, memory, 0)
         { }
 
-        private ReaderBuffSegm(IReclaimReaderBuffSegm<T> reclaim, ReadOnlyMemory<T> memory, uint offset)
+        private ReaderBuffSegm(IReclaimReadOnlyMemory<T> reclaim, ReadOnlyMemory<T> memory, uint offset)
         {
             this.reclaim_ = reclaim;
             this.semaphore_ = new SemaphoreSlim(1, 1);
@@ -150,7 +152,7 @@
 
         public void Dispose()
         {
-            if (this.reclaim_ is IReclaimReaderBuffSegm<T> reclaim)
+            if (this.reclaim_ is IReclaimReadOnlyMemory<T> reclaim)
                 reclaim.Reclaim(this.memory_, this.offset_);
 
             this.reclaim_ = null;
@@ -161,23 +163,59 @@
             => this.Dispose();
     }
 
+    public sealed class PeekerBuffSegm<T> : IBuffSegm<T>
+    {
+        private readonly ReadOnlyMemory<T> memory_;
+
+        private IReclaimReadOnlyMemory<T>? reclaim_;
+
+        public PeekerBuffSegm(ReadOnlyMemory<T> memory) : this(new NoReclaim<T>(), memory)
+        { }
+
+        public PeekerBuffSegm(IReclaimReadOnlyMemory<T> reclaim, ReadOnlyMemory<T> memory)
+        {
+            this.memory_ = memory;
+            this.reclaim_ = reclaim;
+        }
+
+        public uint Length
+            => (uint)this.memory_.Length;
+
+        /// <summary>
+        /// 获取并消耗所有未读取缓冲区，操作完成后此对象 Length 属性将变为0.
+        /// </summary>
+        public ReadOnlyMemory<T> Memory
+            => this.memory_;
+
+        public uint CopyTo(Memory<T> target)
+        {
+            if (this.Length == 0 || target.Length == 0)
+                return 0;
+
+            var copyLen = Math.Min(this.Length, (uint)target.Length);
+            var srcSlice = this.memory_.Slice(0, (int)copyLen);
+            srcSlice.CopyTo(target);
+            return copyLen;
+        }
+    }
+
     public sealed class WriterBuffSegm<T>: IWriterBuffSegm<T>, IDisposable
     {
         private readonly Memory<T> memory_;
 
         private readonly SemaphoreSlim semaphore_;
 
-        private IReclaimWriterBuffSegm<T>? reclaim_;
+        private IReclaimMutableMemory<T>? reclaim_;
 
         private uint offset_;
 
         public WriterBuffSegm(Memory<T> memory) : this(new NoReclaim<T>(), memory)
         { }
 
-        public WriterBuffSegm(IReclaimWriterBuffSegm<T> reclaim, Memory<T> memory) : this(reclaim, memory, 0)
+        public WriterBuffSegm(IReclaimMutableMemory<T> reclaim, Memory<T> memory) : this(reclaim, memory, 0)
         { }
 
-        private WriterBuffSegm(IReclaimWriterBuffSegm<T> reclaim, Memory<T> memory, uint offset)
+        private WriterBuffSegm(IReclaimMutableMemory<T> reclaim, Memory<T> memory, uint offset)
         {
             this.reclaim_ = reclaim;
             this.semaphore_ = new SemaphoreSlim(1, 1);
@@ -266,7 +304,7 @@
 
         public void Dispose()
         {
-            if (this.reclaim_ is IReclaimWriterBuffSegm<T> reclaim)
+            if (this.reclaim_ is IReclaimMutableMemory<T> reclaim)
                 reclaim.Reclaim(this.memory_, this.offset_);
 
             this.reclaim_ = null;
@@ -277,7 +315,7 @@
             => this.Dispose();
     }
 
-    internal readonly struct NoReclaim<T>: IReclaimReaderBuffSegm<T>, IReclaimWriterBuffSegm<T>
+    internal readonly struct NoReclaim<T>: IReclaimReadOnlyMemory<T>, IReclaimMutableMemory<T>
     {
         public void Reclaim(ReadOnlyMemory<T> mem, uint offset)
             => DoNothing();
@@ -288,7 +326,7 @@
         private static void DoNothing() { }
     }
 
-    internal readonly struct ReclaimBuffSegm<T>: IReclaimReaderBuffSegm<T>, IReclaimWriterBuffSegm<T>
+    internal readonly struct ReclaimBuffSegm<T>: IReclaimReadOnlyMemory<T>, IReclaimMutableMemory<T>
     {
         private readonly IBuffSegm<T> source_;
 
