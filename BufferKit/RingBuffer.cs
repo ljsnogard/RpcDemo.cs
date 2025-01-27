@@ -43,8 +43,8 @@
 
     public readonly struct IoPosition
     {
-        public uint Offset { get; init; }
-        public uint Length { get; init; }
+        public NUsize Offset { get; init; }
+        public NUsize Length { get; init; }
     }
 
     public sealed partial class RingBuffer<T> : IBuffer<T>
@@ -64,7 +64,7 @@
         /// <summary>
         /// 缓冲区最大容量
         /// </summary>
-        private readonly uint capacity_;
+        private readonly NUsize capacity_;
 
         /// <summary>
         /// 用于唤醒等待的写者
@@ -79,21 +79,21 @@
         /// <summary>
         /// 写者位置到缓冲区头部的单位数量
         /// </summary>
-        private uint writerOffset_;
+        private NUsize writerOffset_;
 
         /// <summary>
         /// 读者位置到缓冲区头部的单位数量
         /// </summary>
-        private uint readerOffset_;
+        private NUsize readerOffset_;
 
         /// <summary>
         /// 是否处于读者写者位置反转状态
         /// </summary>
         private bool inversed_;
 
-        public RingBuffer(uint capacity)
+        public RingBuffer(NUsize capacity)
         {
-            var memory = new Memory<T>(new T[(int)capacity]);
+            var memory = new Memory<T>(new T[capacity]);
             this.memory_ = memory;
             this.writerSema_ = new SemaphoreSlim(1, 1);
             this.readerSema_ = new SemaphoreSlim(1, 1);
@@ -115,7 +115,7 @@
             return (tx, rx);
         }
 
-        public uint Capacity
+        public NUsize Capacity
             => this.capacity_;
 
         public BuffRx<T> CreateRx(bool shouldCloseOnDispose = false)
@@ -127,13 +127,13 @@
         /// <summary>
         /// 可供写者填充的数据量
         /// </summary>
-        public uint WriterSize
+        public NUsize WriterSize
             => this.GetWriterPositions().SumLength();
 
         /// <summary>
         /// 可供读者消费的数据量
         /// </summary>
-        public uint ReaderSize
+        public NUsize ReaderSize
             => this.GetReaderPositions().SumLength();
 
         public ReadOnlyMemory<IoPosition> GetReaderPositions()
@@ -218,14 +218,14 @@
         /// <param name="length"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public UniTask<OneOf<ReadOnlyMemory<ReaderBuffSegm<T>>, RingBufferError>> ReadAsync(uint length, CancellationToken token = default)
+        public UniTask<OneOf<ReadOnlyMemory<ReaderBuffSegm<T>>, RingBufferError>> ReadAsync(NUsize length, CancellationToken token = default)
             => this.RxAsync_(offset: 0, length, this.CreateReaderSegm, token);
         
 
-        public UniTask<OneOf<ReadOnlyMemory<PeekerBuffSegm<T>>, RingBufferError>> PeekAsync(uint offset, CancellationToken token = default)
+        public UniTask<OneOf<ReadOnlyMemory<PeekerBuffSegm<T>>, RingBufferError>> PeekAsync(NUsize offset, CancellationToken token = default)
             => this.RxAsync_(offset, this.capacity_, this.CreatePeekerSegm, token);
 
-        public UniTask<OneOf<uint, RingBufferError>> ReaderSkipAsync(uint length, CancellationToken token = default)
+        public UniTask<OneOf<NUsize, RingBufferError>> ReaderSkipAsync(NUsize length, CancellationToken token = default)
             => throw new NotImplementedException();
 
         private ReaderBuffSegm<T> CreateReaderSegm(ReadOnlyMemory<T> m)
@@ -235,8 +235,8 @@
             => new PeekerBuffSegm<T>(new ReclaimPeekerBuffSegm(this), m);
 
         private async UniTask<OneOf<ReadOnlyMemory<S>, RingBufferError>> RxAsync_<S>
-            ( uint offset
-            , uint length
+            ( NUsize offset
+            , NUsize length
             , Func<ReadOnlyMemory<T>, S> createSlice
             , CancellationToken token)
             where S: IBuffSegm<T>
@@ -262,7 +262,7 @@
                     if (available > 0)
                     {
                         var l = Math.Min(available, length);
-                        var s0 = createSlice(this.memory_.Slice(in positions.Span[0], l));
+                        var s0 = createSlice(this.memory_.Slice(positions.Span[0], l));
                         var rest = length - s0.Length;
                         succ = true;
                         if (positions.Length > 1 && rest > 0)
@@ -306,7 +306,7 @@
         /// <param name="length"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public async UniTask<OneOf<ReadOnlyMemory<WriterBuffSegm<T>>, RingBufferError>> WriteAsync(uint length, CancellationToken token = default)
+        public async UniTask<OneOf<ReadOnlyMemory<WriterBuffSegm<T>>, RingBufferError>> WriteAsync(NUsize length, CancellationToken token = default)
         {
             if (this.writerDemand_.TryPickT1(out var error, out var _) && error == RingBufferError.Closed)
                 return error;
@@ -386,25 +386,25 @@
             }
         }
 
-        async UniTask<OneOf<ReadOnlyMemory<ReaderBuffSegm<T>>, IBufferError>> IBuffer<T>.ReadAsync(uint length, CancellationToken token)
+        async UniTask<OneOf<ReadOnlyMemory<ReaderBuffSegm<T>>, IBufferError>> IBuffer<T>.ReadAsync(NUsize length, CancellationToken token)
         {
             var r = await this.ReadAsync(length, token);
             return r.MapT1((e) => e as IBufferError);
         }
 
-        async UniTask<OneOf<ReadOnlyMemory<PeekerBuffSegm<T>>, IBufferError>> IBuffer<T>.PeekAsync(uint offset, System.Threading.CancellationToken token)
+        async UniTask<OneOf<ReadOnlyMemory<PeekerBuffSegm<T>>, IBufferError>> IBuffer<T>.PeekAsync(NUsize offset, System.Threading.CancellationToken token)
         {
             var r = await this.PeekAsync(offset, token);
             return r.MapT1((e) => e as IBufferError);
         }
 
-        async UniTask<OneOf<uint, IBufferError>> IBuffer<T>.ReaderSkipAsync(uint length, System.Threading.CancellationToken token)
+        async UniTask<OneOf<NUsize, IBufferError>> IBuffer<T>.ReaderSkipAsync(NUsize length, System.Threading.CancellationToken token)
         {
             var r = await this.ReaderSkipAsync(length, token);
             return r.MapT1((e) => e as IBufferError);
         }
 
-        async UniTask<OneOf<ReadOnlyMemory<WriterBuffSegm<T>>, IBufferError>> IBuffer<T>.WriteAsync(uint length, CancellationToken token)
+        async UniTask<OneOf<ReadOnlyMemory<WriterBuffSegm<T>>, IBufferError>> IBuffer<T>.WriteAsync(NUsize length, CancellationToken token)
         {
             var r = await this.WriteAsync(length, token);
             return r.MapT1((e) => e as IBufferError);
@@ -431,7 +431,7 @@
     {
         private readonly struct Demand
         {
-            public uint Amount { get; init; }
+            public NUsize Amount { get; init; }
 
             public UniTaskCompletionSource Signal { get; init; }
         }
@@ -446,7 +446,7 @@
             public ReclaimReaderBuffSegm(RingBuffer<T> buffer)
                 => this.buffer_ = buffer;
 
-            public void Reclaim(ReadOnlyMemory<T> mem, uint offset)
+            public void Reclaim(ReadOnlyMemory<T> mem, NUsize offset)
             {
                 UniTaskCompletionSource? signal = null;
                 lock (this.buffer_)
@@ -498,7 +498,7 @@
             public ReclaimPeekerBuffSegm(RingBuffer<T> buffer)
                 => this.buffer_ = buffer;
 
-            public void Reclaim(ReadOnlyMemory<T> mem, uint offset)
+            public void Reclaim(ReadOnlyMemory<T> mem, NUsize offset)
                 => this.buffer_.readerSema_.Release();
         }
 
@@ -509,7 +509,7 @@
             public ReclaimWriterBuffSegm(RingBuffer<T> buffer)
                 => this.buffer_ = buffer;
 
-            public void Reclaim(Memory<T> mem, uint offset)
+            public void Reclaim(Memory<T> mem, NUsize offset)
             {
                 UniTaskCompletionSource? signal = null;
                 lock (this.buffer_)
@@ -543,18 +543,18 @@
 
     internal static class IoPositionsArrayExtensions
     {
-        public static uint SumLength(in this ReadOnlyMemory<IoPosition> a)
+        public static NUsize SumLength(in this ReadOnlyMemory<IoPosition> a)
         {
-            uint s = 0;
+            NUsize s = 0;
             for (var i = 0; i < a.Length; ++i)
                 s += a.Span[i].Length;
             return s;
         }
 
-        public static Memory<T> Slice<T>(in this Memory<T> m, in IoPosition p, in uint demand)
+        public static Memory<T> Slice<T>(in this Memory<T> m, in IoPosition p, in NUsize demand)
         {
             var l = Math.Min(p.Length, demand);
-            return m.Slice((int)p.Offset, (int)l);
+            return m.Slice(p.Offset, l);
         }
     }
 }

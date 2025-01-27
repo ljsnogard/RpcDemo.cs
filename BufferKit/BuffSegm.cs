@@ -12,29 +12,29 @@
 
     public interface IReclaimReadOnlyMemory<T>: IReclaim<T>
     {
-        public void Reclaim(ReadOnlyMemory<T> mem, uint offset);
+        public void Reclaim(ReadOnlyMemory<T> mem, NUsize offset);
     }
 
     public interface IReclaimMutableMemory<T>: IReclaim<T>
     {
-        public void Reclaim(Memory<T> mem, uint offset);
+        public void Reclaim(Memory<T> mem, NUsize offset);
     }
 
     #region IBuffSegm variants
 
     internal interface IBuffSegm<T>
     {
-        public uint Length { get; }
+        public NUsize Length { get; }
     }
 
     internal interface IReaderBuffSegm<T>: IBuffSegm<T>
     {
-        public void Forward(uint length);
+        public void Forward(NUsize length);
     }
 
     internal interface IWriterBuffSegm<T>: IBuffSegm<T>
     {
-        public void Forward(uint length);
+        public void Forward(NUsize length);
     }
 
     #endregion
@@ -46,8 +46,7 @@
         private BuffSegmError(uint code)
             => this.code_ = code;
 
-        public static readonly ReadOnlyMemory<string> NAMES = new ReadOnlyMemory<string>(
-            ["Borrowed", "Disposed", "Insufficient"]);
+        public static readonly ReadOnlyMemory<string> NAMES = new ReadOnlyMemory<string>(["Borrowed", "Disposed", "Insufficient"]);
 
         public static readonly BuffSegmError Borrowed = new BuffSegmError(0);
 
@@ -79,7 +78,7 @@
 
         private IReclaimReadOnlyMemory<T>? reclaim_;
 
-        private uint offset_;
+        private NUsize offset_;
 
         public ReaderBuffSegm(ReadOnlyMemory<T> memory) : this(new NoReclaim<T>(), memory, 0)
         { }
@@ -95,8 +94,8 @@
             this.offset_ = offset;
         }
 
-        public uint Length
-            => (uint)this.memory_.Length - this.offset_;
+        public NUsize Length
+            => (NUsize)this.memory_.Length - this.offset_;
 
         /// <summary>
         /// 获取并消耗所有未读取缓冲区，操作完成后此对象 Length 属性将变为0.
@@ -107,29 +106,29 @@
         /// <summary>
         /// 获取并消耗指定长度的已填充缓冲区，操作完成后此对象 Length 将相应减少.
         /// </summary>
-        public ReadOnlyMemory<T> ReadSlice(uint length)
+        public ReadOnlyMemory<T> ReadSlice(NUsize length)
         {
             if (this.Length < length)
                 length = this.Length;
 
-            var m = this.memory_.Slice((int)this.offset_, (int)length);
+            var m = this.memory_.Slice(this.offset_, length);
             this.offset_ += length;
             return m;
         }
 
-        public uint CopyTo(Memory<T> target)
+        public NUsize CopyTo(Memory<T> target)
         {
             if (this.Length == 0 || target.Length == 0)
                 return 0;
 
-            var copyLen = Math.Min(this.Length, (uint)target.Length);
-            var srcSlice = this.memory_.Slice((int)this.offset_, (int)copyLen);
+            var copyLen = Math.Min(this.Length, (NUsize)target.Length);
+            var srcSlice = this.memory_.Slice(this.offset_, copyLen);
             srcSlice.CopyTo(target);
             this.offset_ += copyLen;
             return copyLen;
         }
 
-        public async UniTask<OneOf<ReaderBuffSegm<T>, BuffSegmError>> SliceAsync(uint length, CancellationToken token = default)
+        public async UniTask<OneOf<ReaderBuffSegm<T>, BuffSegmError>> SliceAsync(NUsize length, CancellationToken token = default)
         {
             var succ = false;
             try
@@ -137,9 +136,9 @@
                 // 限制借用者的数量，只有当一个借用者结束后才能允许下一个借用
                 await this.semaphore_.WaitAsync(token);
 
-                uint borrowLength = Math.Min(this.Length, length);
+                var borrowLength = Math.Min(this.Length, length);
                 var reclaim = ReclaimBuffSegm<T>.Create(this);
-                var memory = this.memory_.Slice((int)this.offset_, (int)borrowLength);
+                var memory = this.memory_.Slice(this.offset_, borrowLength);
 
                 succ = true;
                 return new ReaderBuffSegm<T>(reclaim, memory, 0);
@@ -151,7 +150,7 @@
             }
         }
 
-        void IReaderBuffSegm<T>.Forward(uint length)
+        void IReaderBuffSegm<T>.Forward(NUsize length)
         {
             this.offset_ += length;
             this.semaphore_.Release();
@@ -185,8 +184,8 @@
             this.reclaim_ = reclaim;
         }
 
-        public uint Length
-            => (uint)this.memory_.Length;
+        public NUsize Length
+            => (NUsize)this.memory_.Length;
 
         /// <summary>
         /// 获取并消耗所有未读取缓冲区，操作完成后此对象 Length 属性将变为0.
@@ -194,12 +193,12 @@
         public ReadOnlyMemory<T> Memory
             => this.memory_;
 
-        public uint CopyTo(Memory<T> target)
+        public NUsize CopyTo(Memory<T> target)
         {
             if (this.Length == 0 || target.Length == 0)
                 return 0;
 
-            var copyLen = Math.Min(this.Length, (uint)target.Length);
+            var copyLen = Math.Min(this.Length, (NUsize)target.Length);
             var srcSlice = this.memory_.Slice(0, (int)copyLen);
             srcSlice.CopyTo(target);
             return copyLen;
@@ -214,7 +213,7 @@
 
         private IReclaimMutableMemory<T>? reclaim_;
 
-        private uint offset_;
+        private NUsize offset_;
 
         public WriterBuffSegm(Memory<T> memory) : this(new NoReclaim<T>(), memory)
         { }
@@ -233,8 +232,8 @@
         /// <summary>
         /// 查询未填充的缓冲区长度
         /// </summary>
-        public uint Length
-            => (uint)this.memory_.Length - this.offset_;
+        public NUsize Length
+            => (NUsize)this.memory_.Length - this.offset_;
 
         /// <summary>
         /// 获取并消耗所有未读取缓冲区，操作完成后此对象 Length 属性将变为0.
@@ -245,17 +244,17 @@
         /// <summary>
         /// 获取并消耗指定长度的未填充缓冲区，操作完成后此对象 Length 将相应减少.
         /// </summary>
-        public Memory<T> WriteSlice(uint length)
+        public Memory<T> WriteSlice(NUsize length)
         {
             if (this.Length < length)
                 length = this.Length;
 
-            var m = this.memory_.Slice((int)this.offset_, (int)length);
+            var m = this.memory_.Slice(this.offset_, length);
             this.offset_ += length;
             return m;
         }
 
-        public async UniTask<OneOf<uint, BuffSegmError>> CopyFromAsync(ReaderBuffSegm<T> source)
+        public async UniTask<OneOf<NUsize, BuffSegmError>> CopyFromAsync(ReaderBuffSegm<T> source)
         {
             var copyLen = Math.Min(this.Length, source.Length);
             var maybeSlice = await source.SliceAsync(copyLen);
@@ -264,18 +263,18 @@
             using (srcSlice)
             {
                 var srcMem = srcSlice.ReadAll();
-                var dstMem = this.memory_.Slice((int)this.offset_, (int)copyLen);
+                var dstMem = this.memory_.Slice(this.offset_, copyLen);
                 srcMem.CopyTo(dstMem);
-                return copyLen;
+                return (NUsize)copyLen;
             }
         }
 
-        public uint CopyFrom(ReadOnlyMemory<T> source)
+        public NUsize CopyFrom(ReadOnlyMemory<T> source)
         {
             if (this.Length == 0 || source.Length == 0)
                 return 0;
             var copyLen = Math.Min(this.Length, (uint)source.Length);
-            var dst = this.memory_.Slice((int)this.offset_);
+            var dst = this.memory_.Slice(this.offset_);
             var src = source.Slice(0, (int)copyLen);
             src.CopyTo(dst);
             this.offset_ += copyLen;
@@ -288,16 +287,16 @@
         /// <param name="length"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public async UniTask<OneOf<WriterBuffSegm<T>, BuffSegmError>> SliceAsync(uint length, CancellationToken token = default)
+        public async UniTask<OneOf<WriterBuffSegm<T>, BuffSegmError>> SliceAsync(NUsize length, CancellationToken token = default)
         {
             var succ = false;
             try
             {
                 await this.semaphore_.WaitAsync(token);
 
-                uint borrowLength = Math.Min(this.Length, length);
+                NUsize borrowLength = Math.Min(this.Length, length);
                 var reclaim = ReclaimBuffSegm<T>.Create(this);
-                var memory = this.memory_.Slice((int)this.offset_, (int)borrowLength);
+                var memory = this.memory_.Slice(this.offset_, borrowLength);
 
                 succ = true;
                 return new WriterBuffSegm<T>(reclaim, memory, 0);
@@ -309,7 +308,7 @@
             }
         }
 
-        void IWriterBuffSegm<T>.Forward(uint length)
+        void IWriterBuffSegm<T>.Forward(NUsize length)
         {
             this.offset_ += length;
             this.semaphore_.Release();
@@ -330,10 +329,10 @@
 
     internal readonly struct NoReclaim<T>: IReclaimReadOnlyMemory<T>, IReclaimMutableMemory<T>
     {
-        public void Reclaim(ReadOnlyMemory<T> mem, uint offset)
+        public void Reclaim(ReadOnlyMemory<T> mem, NUsize offset)
             => DoNothing();
 
-        public void Reclaim(Memory<T> mem, uint offset)
+        public void Reclaim(Memory<T> mem, NUsize offset)
             => DoNothing();
 
         private static void DoNothing() { }
@@ -349,7 +348,7 @@
         public static ReclaimBuffSegm<T> Create<S>(in S source) where S: class, IBuffSegm<T>
             => new ReclaimBuffSegm<T>(source);
 
-        public void Reclaim(ReadOnlyMemory<T> mem, uint offset)
+        public void Reclaim(ReadOnlyMemory<T> mem, NUsize offset)
         {
             if (this.source_ is IReaderBuffSegm<T> source)
                 source.Forward(offset);
@@ -357,12 +356,41 @@
                 throw this.source_.UnexpectedTypeException();
         }
 
-        public void Reclaim(Memory<T> mem, uint offset)
+        public void Reclaim(Memory<T> mem, NUsize offset)
         {
             if (this.source_ is IWriterBuffSegm<T> source)
                 source.Forward(offset);
             else
                 throw this.source_.UnexpectedTypeException();
+        }
+    }
+
+    public static class MemorySliceNUsizeExtension
+    {
+        public static Memory<T> Slice<T>(in this Memory<T> memory, NUsize offset, NUsize length)
+        {
+            uint offsetU32 = (uint)offset;
+            uint lengthU32 = (uint)length;
+            return memory.Slice((int)offsetU32, (int)lengthU32);
+        }
+
+        public static Memory<T> Slice<T>(in this Memory<T> memory, NUsize offset)
+        {
+            uint offsetU32 = (uint)offset;
+            return memory.Slice((int)offsetU32);
+        }
+
+        public static ReadOnlyMemory<T> Slice<T>(in this ReadOnlyMemory<T> memory, NUsize offset, NUsize length)
+        {
+            uint offsetU32 = (uint)offset;
+            uint lengthU32 = (uint)length;
+            return memory.Slice((int)offsetU32, (int)lengthU32);
+        }
+
+        public static ReadOnlyMemory<T> Slice<T>(in this ReadOnlyMemory<T> memory, NUsize offset)
+        {
+            uint offsetU32 = (uint)offset;
+            return memory.Slice((int)offsetU32);
         }
     }
 

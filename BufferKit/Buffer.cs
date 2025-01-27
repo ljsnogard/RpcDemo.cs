@@ -23,7 +23,7 @@
         /// <param name="length"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public UniTask<OneOf<ReadOnlyMemory<ReaderBuffSegm<T>>, IBufferError>> ReadAsync(uint length, CancellationToken token = default);
+        public UniTask<OneOf<ReadOnlyMemory<ReaderBuffSegm<T>>, IBufferError>> ReadAsync(NUsize length, CancellationToken token = default);
 
         /// <summary>
         /// 预览缓冲区中, 位于指定的偏移量以后的所有已填充的数据, 而不消费这些数据
@@ -31,7 +31,7 @@
         /// <param name="offset">要跳过的数据偏移量</param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public UniTask<OneOf<ReadOnlyMemory<PeekerBuffSegm<T>>, IBufferError>> PeekAsync(uint offset, CancellationToken token = default);
+        public UniTask<OneOf<ReadOnlyMemory<PeekerBuffSegm<T>>, IBufferError>> PeekAsync(NUsize offset, CancellationToken token = default);
 
         /// <summary>
         /// 忽略内容，直接消耗不大于指定长度的已填充数据，通常与 PeekAsync 搭配使用。
@@ -39,7 +39,7 @@
         /// <param name="length"></param>
         /// <param name=""></param>
         /// <returns></returns>
-        public UniTask<OneOf<uint, IBufferError>> ReaderSkipAsync(uint length, CancellationToken token = default);
+        public UniTask<OneOf<NUsize, IBufferError>> ReaderSkipAsync(NUsize length, CancellationToken token = default);
 
         /// <summary>
         /// 从内部缓冲区中借出一段未填充缓存，该缓存长度不大于给定的长度；如果执行完成，则返回该未填充缓存
@@ -47,7 +47,7 @@
         /// <param name="length"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public UniTask<OneOf<ReadOnlyMemory<WriterBuffSegm<T>>, IBufferError>> WriteAsync(uint length, CancellationToken token = default);
+        public UniTask<OneOf<ReadOnlyMemory<WriterBuffSegm<T>>, IBufferError>> WriteAsync(NUsize length, CancellationToken token = default);
 
         public bool IsRxClosed { get; }
 
@@ -101,7 +101,7 @@
         /// <param name="length"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public UniTask<OneOf<ReadOnlyMemory<WriterBuffSegm<T>>, IBufferError>> WriteAsync(uint length, CancellationToken token = default)
+        public UniTask<OneOf<ReadOnlyMemory<WriterBuffSegm<T>>, IBufferError>> WriteAsync(NUsize length, CancellationToken token = default)
         {
             if (this.buff_ is IBuffer<T> buff)
                 return buff.WriteAsync(length, token);
@@ -115,13 +115,13 @@
         /// <param name="source"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public async UniTask<OneOf<uint, BuffIoError>> DumpAsync(ReadOnlyMemory<T> source, CancellationToken token = default)
+        public async UniTask<OneOf<NUsize, BuffIoError>> DumpAsync(ReadOnlyMemory<T> source, CancellationToken token = default)
         {
             if (this.buff_ is not IBuffer<T> buffer)
                 throw CreateObjectDisposedException();
 
-            uint filledCount = 0;
-            uint sourceLength = (uint)source.Length;
+            NUsize filledCount = 0;
+            NUsize sourceLength = (NUsize)source.Length;
             while (filledCount < sourceLength)
             {
                 var unfilledLength = sourceLength - filledCount;
@@ -133,7 +133,7 @@
                 {
                     using var txBuff = txArr.Span[i];
                     Debug.Assert((uint)source.Length - filledCount >= txBuff.Length);
-                    var unfilledSource = source.Slice((int)filledCount, (int)txBuff.Length);
+                    var unfilledSource = source.Slice(filledCount, txBuff.Length);
                     filledCount += txBuff.CopyFrom(unfilledSource); ;
                 }
             }
@@ -192,7 +192,7 @@
         /// <param name="length"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public UniTask<OneOf<ReadOnlyMemory<ReaderBuffSegm<T>>, IBufferError>> ReadAsync(uint length, CancellationToken token = default)
+        public UniTask<OneOf<ReadOnlyMemory<ReaderBuffSegm<T>>, IBufferError>> ReadAsync(NUsize length, CancellationToken token = default)
         {
             if (this.buff_ is IBuffer<T> buff)
                 return buff.ReadAsync(length, token);
@@ -205,7 +205,7 @@
         /// </summary>
         /// <param name="token"></param>
         /// <returns></returns>
-        public UniTask<OneOf<ReadOnlyMemory<PeekerBuffSegm<T>>, IBufferError>> PeekAsync(uint offset, CancellationToken token = default)
+        public UniTask<OneOf<ReadOnlyMemory<PeekerBuffSegm<T>>, IBufferError>> PeekAsync(NUsize offset, CancellationToken token = default)
         {
             if (this.buff_ is IBuffer<T> buff)
                 return buff.PeekAsync(offset, token);
@@ -219,13 +219,13 @@
         /// <param name="target"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public async UniTask<OneOf<uint, BuffIoError>> ReadAsync(Memory<T> target, CancellationToken token = default)
+        public async UniTask<OneOf<NUsize, BuffIoError>> ReadAsync(Memory<T> target, CancellationToken token = default)
         {
             if (this.buff_ is not IBuffer<T> buffer)
                 throw this.CreateObjectDisposedException();
 
-            uint filledCount = 0;
-            uint targetLength = (uint)target.Length;
+            NUsize filledCount = 0;
+            NUsize targetLength = (NUsize)target.Length;
             while (filledCount < targetLength)
             {
                 var unfilledLength = targetLength - filledCount;
@@ -237,20 +237,20 @@
                 {
                     using var rxBuff = rxArr.Span[i];
                     Debug.Assert((uint)target.Length - filledCount >= rxBuff.Length);
-                    var unfilledTarget = target.Slice((int)filledCount, (int)rxBuff.Length);
+                    var unfilledTarget = target.Slice(filledCount, rxBuff.Length);
                     filledCount += rxBuff.CopyTo(unfilledTarget);
                 }
             }
             return filledCount;
         }
 
-        public async UniTask<OneOf<uint, BuffIoError>> PeekAsync(uint offset, Memory<T> target, CancellationToken token = default)
+        public async UniTask<OneOf<NUsize, BuffIoError>> PeekAsync(NUsize offset, Memory<T> target, CancellationToken token = default)
         {
             if (this.buff_ is not IBuffer<T> buffer)
                 throw this.CreateObjectDisposedException();
 
-            uint filledCount = 0;
-            uint targetLength = (uint)target.Length;
+            NUsize filledCount = 0;
+            NUsize targetLength = (NUsize)target.Length;
             while (filledCount < targetLength)
             {
                 var maybeSlices = await buffer.PeekAsync(offset + filledCount, token);
@@ -263,8 +263,8 @@
                     var unfilledLength = targetLength - filledCount;
                     if (unfilledLength == 0)
                         break;
-                    var copyLen = Math.Min(unfilledLength, (uint)source.Length);
-                    var dst = target.Slice((int)filledCount, (int)copyLen);
+                    var copyLen = Math.Min(unfilledLength, source.Length);
+                    var dst = target.Slice(filledCount, copyLen);
                     filledCount += source.CopyTo(dst);
                 }
             }

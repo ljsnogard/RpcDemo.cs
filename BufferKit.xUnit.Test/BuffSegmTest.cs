@@ -3,20 +3,20 @@ namespace BufferKit.xUnit.Test
     public sealed class BuffSegmTest
     {
         [Fact]
-        public void BuffSegmToMemoryShouldChangeLength()
+        public void BuffSegmReadWriteShouldChangeLength()
         {
             var data = new byte[128];
             using (var segmRef = new ReaderBuffSegm<byte>(new ReadOnlyMemory<byte>(data)))
             {
-                Assert.Equal((uint)data.Length, segmRef.Length);
+                Assert.Equal((NUsize)data.Length, segmRef.Length);
                 var memory = segmRef.ReadAll();
-                Assert.Equal((uint)0, segmRef.Length);
+                Assert.Equal((NUsize)0, segmRef.Length);
             }
             using (var segmMut = new WriterBuffSegm<byte>(new Memory<byte>(data)))
             {
-                Assert.Equal((uint)data.Length, segmMut.Length);
+                Assert.Equal((NUsize)data.Length, segmMut.Length);
                 var memory = segmMut.WriteAll();
-                Assert.Equal((uint)0, segmMut.Length);
+                Assert.Equal((NUsize)0, segmMut.Length);
             }
         }
 

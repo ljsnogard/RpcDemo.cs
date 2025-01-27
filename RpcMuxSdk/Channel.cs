@@ -83,13 +83,13 @@
         /// <para>3. 如果发送方故障导致没有正确发送末段数据, 接收方将只能死等; </para>
         /// <para>4. 数据切分成数据包的大小完全取决于 data 取出的大小, 有可能有效荷载太小导致传输效率低; </para>
         /// </remarks>
-        public UniTask<OneOf<uint, ChannelError>> SendAsync(BuffRx<byte> data, CancellationToken token = default)
+        public UniTask<OneOf<nuint, ChannelError>> SendAsync(BuffRx<byte> data, CancellationToken token = default)
             => throw new NotImplementedException();
 
         public async UniTask<OneOf<ReadOnlyMemory<ReaderBuffSegm<byte>>, ChannelError>> RecvAsync(uint length, CancellationToken token = default)
         {
-            var result = await this.rxBuff_.ReadAsync(length, token);
-            return result.MapT1((e) => new ChannelError { InnerError = e });
+            var r = await this.rxBuff_.ReadAsync(length, token);
+            return r.MapT1((e) => new ChannelError { InnerError = e });
         }
     }
 }
