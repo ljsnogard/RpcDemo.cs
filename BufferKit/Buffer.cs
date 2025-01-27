@@ -115,7 +115,7 @@
         /// <param name="source"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public async UniTask<OneOf<NUsize, BuffIoError>> DumpAsync(ReadOnlyMemory<T> source, CancellationToken token = default)
+        public async UniTask<OneOf<NUsize, BuffIoError>> WriteAsync(ReadOnlyMemory<T> source, CancellationToken token = default)
         {
             if (this.buff_ is not IBuffer<T> buffer)
                 throw CreateObjectDisposedException();

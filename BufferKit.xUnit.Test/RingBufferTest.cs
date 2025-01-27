@@ -64,9 +64,9 @@
                 throw new Exception();
 
             (var tx, var rx) = pair;
-            var count = 8;
-            var txCount = 0;
-            var rxCount = 0;
+            NUsize count = 8;
+            NUsize txCount = 0;
+            NUsize rxCount = 0;
 
             var rxWork = async () =>
             {
@@ -90,7 +90,8 @@
             {
                 while (txCount < count)
                 {
-                    var tryWrite = await tx.DumpAsync(new ReadOnlyMemory<byte>([(byte)txCount]));
+                    Assert.True(txCount.TryInto(out byte txCountU8));
+                    var tryWrite = await tx.WriteAsync(new ReadOnlyMemory<byte>([txCountU8]));
                     if (!tryWrite.TryPickT0(out var writeCount, out var error))
                         throw error.AsException();
                     Assert.Equal((uint)1, writeCount);
@@ -145,7 +146,7 @@
             foreach (var slice in testDataSlices)
             {
                 var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-                var d = await tx.DumpAsync(slice, cts.Token);
+                var d = await tx.WriteAsync(slice, cts.Token);
                 Assert.True(d.IsT0);
                 Assert.Equal((uint)slice.Length, d.AsT0);
             }

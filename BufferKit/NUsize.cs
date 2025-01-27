@@ -16,6 +16,21 @@
 
         #region Convert
 
+        public static implicit operator NUsize(nuint u)
+            => new NUsize(u);
+
+        public static implicit operator NUsize(UInt32 u)
+            => new NUsize(u);
+
+        public static implicit operator NUsize(UInt16 u)
+            => new NUsize(u);
+
+        public static implicit operator NUsize(Byte u)
+            => new NUsize(u);
+
+        public static implicit operator nuint(NUsize u)
+            => u.Val;
+
         public static OneOf<NUsize, UInt128> TryFrom(UInt128 u)
         {
             if (u > nuint.MaxValue)
@@ -31,21 +46,6 @@
             else
                 return new NUsize((nuint)u);
         }
-
-        public static implicit operator NUsize(nuint u)
-            => new NUsize(u);
-
-        public static implicit operator NUsize(UInt32 u)
-            => new NUsize(u);
-
-        public static implicit operator NUsize(UInt16 u)
-            => new NUsize(u);
-
-        public static implicit operator NUsize(Byte u)
-            => new NUsize(u);
-
-        public static implicit operator nuint(NUsize u)
-            => u.Val;
 
         public static OneOf<NUsize, Int128> TryFrom(Int128 u)
         {
@@ -85,6 +85,104 @@
                 return u;
             else
                 return new NUsize((nuint)u);
+        }
+
+        public bool TryInto(out UInt32 i)
+        {
+            if (this.Val >= UInt32.MaxValue)
+            {
+                i = default;
+                return false;
+            }
+            else
+            {
+                i = (UInt32)this.Val;
+                return true;
+            }
+        }
+
+        public bool TryInto(out UInt16 i)
+        {
+            if (this.Val >= UInt16.MaxValue)
+            {
+                i = default;
+                return false;
+            }
+            else
+            {
+                i = (UInt16)this.Val;
+                return true;
+            }
+        }
+
+        public bool TryInto(out Byte i)
+        {
+            if (this.Val >= Byte.MaxValue)
+            {
+                i = default;
+                return false;
+            }
+            else
+            {
+                i = (Byte)this.Val;
+                return true;
+            }
+        }
+
+        public bool TryInto(out Int64 i)
+        {
+            if (this.Val >= Int64.MaxValue)
+            {
+                i = default;
+                return false;
+            }
+            else
+            {
+                i = (Int64)this.Val;
+                return true;
+            }
+        }
+
+        public bool TryInto(out Int32 i)
+        {
+            if (this.Val >= Int32.MaxValue)
+            {
+                i = default;
+                return false;
+            }
+            else
+            {
+                i = (Int32)this.Val;
+                return true;
+            }
+        }
+
+        public bool TryInto(out Int16 i)
+        {
+            if (this.Val >= (UInt32)Int16.MaxValue)
+            {
+                i = default;
+                return false;
+            }
+            else
+            {
+                i = (Int16)this.Val;
+                return true;
+            }
+        }
+
+        public bool TryInto(out SByte i)
+        {
+            if (this.Val >= (UInt16)SByte.MaxValue)
+            {
+                i = default;
+                return false;
+            }
+            else
+            {
+                i = (SByte)this.Val;
+                return true;
+            }
         }
 
         #endregion
@@ -173,10 +271,164 @@
             => a.Val <= (Int128)b;
 
         public static bool operator ==(NUsize a, Int32 b)
-            => a == (Int128)b;
+            => a.Val == (Int128)b;
 
         public static bool operator !=(NUsize a, Int32 b)
-            => a != (Int128)b;
+            => a.Val != (Int128)b;
+
+        #endregion
+
+        #region Compare with Int16
+
+        public static bool operator >(NUsize a, Int16 b)
+            => a.Val > (Int128)b;
+
+        public static bool operator <(NUsize a, Int16 b)
+            => a.Val < (Int128)b;
+
+        public static bool operator >=(NUsize a, Int16 b)
+            => a.Val >= (Int128)b;
+
+        public static bool operator <=(NUsize a, Int16 b)
+            => a.Val <= (Int128)b;
+
+        public static bool operator ==(NUsize a, Int16 b)
+            => a.Val == (Int128)b;
+
+        public static bool operator !=(NUsize a, Int16 b)
+            => a.Val != (Int128)b;
+
+        #endregion
+
+        #region Compare with SByte
+
+        public static bool operator >(NUsize a, SByte b)
+            => a.Val > (Int128)b;
+
+        public static bool operator <(NUsize a, SByte b)
+            => a.Val < (Int128)b;
+
+        public static bool operator >=(NUsize a, SByte b)
+            => a.Val >= (Int128)b;
+
+        public static bool operator <=(NUsize a, SByte b)
+            => a.Val <= (Int128)b;
+
+        public static bool operator ==(NUsize a, SByte b)
+            => a.Val == (Int128)b;
+
+        public static bool operator !=(NUsize a, SByte b)
+            => a.Val != (Int128)b;
+
+        #endregion
+
+        #region Compare with UInt128
+
+        public static bool operator >(NUsize a, UInt128 b)
+            => (UInt128)a.Val > b;
+
+        public static bool operator <(NUsize a, UInt128 b)
+            => (UInt128)a.Val < b;
+
+        public static bool operator >=(NUsize a, UInt128 b)
+            => (UInt128)a.Val >= b;
+
+        public static bool operator <=(NUsize a, UInt128 b)
+            => (UInt128)a.Val <= b;
+
+        public static bool operator ==(NUsize a, UInt128 b)
+            => (UInt128)a.Val == b;
+
+        public static bool operator !=(NUsize a, UInt128 b)
+            => (UInt128)a.Val != b;
+
+        #endregion
+
+        #region Compare with UInt64
+
+        public static bool operator >(NUsize a, UInt64 b)
+            => (UInt64)a.Val > b;
+
+        public static bool operator <(NUsize a, UInt64 b)
+            => (UInt64)a.Val < b;
+
+        public static bool operator >=(NUsize a, UInt64 b)
+            => (UInt64)a.Val >= b;
+
+        public static bool operator <=(NUsize a, UInt64 b)
+            => (UInt64)a.Val <= b;
+
+        public static bool operator ==(NUsize a, UInt64 b)
+            => (UInt64)a.Val == b;
+
+        public static bool operator !=(NUsize a, UInt64 b)
+            => (UInt64)a.Val != b;
+
+        #endregion
+
+        #region Compare with UInt32
+
+        public static bool operator >(NUsize a, UInt32 b)
+            => a.Val > b;
+
+        public static bool operator <(NUsize a, UInt32 b)
+            => a.Val < b;
+
+        public static bool operator >=(NUsize a, UInt32 b)
+            => a.Val >= b;
+
+        public static bool operator <=(NUsize a, UInt32 b)
+            => a.Val <= b;
+
+        public static bool operator ==(NUsize a, UInt32 b)
+            => a.Val == b;
+
+        public static bool operator !=(NUsize a, UInt32 b)
+            => a.Val != b;
+
+        #endregion
+
+        #region Compare with UInt16
+
+        public static bool operator >(NUsize a, UInt16 b)
+            => a.Val > b;
+
+        public static bool operator <(NUsize a, UInt16 b)
+            => a.Val < b;
+
+        public static bool operator >=(NUsize a, UInt16 b)
+            => a.Val >= b;
+
+        public static bool operator <=(NUsize a, UInt16 b)
+            => a.Val <= b;
+
+        public static bool operator ==(NUsize a, UInt16 b)
+            => a.Val == b;
+
+        public static bool operator !=(NUsize a, UInt16 b)
+            => a.Val != b;
+
+        #endregion
+
+        #region Compare with Byte
+
+        public static bool operator >(NUsize a, Byte b)
+            => a.Val > b;
+
+        public static bool operator <(NUsize a, Byte b)
+            => a.Val < b;
+
+        public static bool operator >=(NUsize a, Byte b)
+            => a.Val >= b;
+
+        public static bool operator <=(NUsize a, Byte b)
+            => a.Val <= b;
+
+        public static bool operator ==(NUsize a, Byte b)
+            => a.Val == b;
+
+        public static bool operator !=(NUsize a, Byte b)
+            => a.Val != b;
 
         #endregion
 

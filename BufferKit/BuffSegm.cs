@@ -365,32 +365,38 @@
         }
     }
 
-    public static class MemorySliceNUsizeExtension
+    public static class MemorySliceNUsizeExtensions
     {
         public static Memory<T> Slice<T>(in this Memory<T> memory, NUsize offset, NUsize length)
         {
-            uint offsetU32 = (uint)offset;
-            uint lengthU32 = (uint)length;
-            return memory.Slice((int)offsetU32, (int)lengthU32);
+            if (!offset.TryInto(out int offsetI32))
+                throw new ArgumentOutOfRangeException(nameof(offset));
+            if (!length.TryInto(out int lengthI32))
+                throw new ArgumentOutOfRangeException(nameof(length));
+            return memory.Slice(offsetI32, lengthI32);
         }
 
         public static Memory<T> Slice<T>(in this Memory<T> memory, NUsize offset)
         {
-            uint offsetU32 = (uint)offset;
-            return memory.Slice((int)offsetU32);
+            if (!offset.TryInto(out int offsetI32))
+                throw new ArgumentOutOfRangeException(nameof(offset));
+            return memory.Slice(offsetI32);
         }
 
         public static ReadOnlyMemory<T> Slice<T>(in this ReadOnlyMemory<T> memory, NUsize offset, NUsize length)
         {
-            uint offsetU32 = (uint)offset;
-            uint lengthU32 = (uint)length;
-            return memory.Slice((int)offsetU32, (int)lengthU32);
+            if (!offset.TryInto(out int offsetI32))
+                throw new ArgumentOutOfRangeException(nameof(offset));
+            if (!length.TryInto(out int lengthI32))
+                throw new ArgumentOutOfRangeException(nameof(length));
+            return memory.Slice(offsetI32, lengthI32);
         }
 
         public static ReadOnlyMemory<T> Slice<T>(in this ReadOnlyMemory<T> memory, NUsize offset)
         {
-            uint offsetU32 = (uint)offset;
-            return memory.Slice((int)offsetU32);
+            if (!offset.TryInto(out int offsetI32))
+                throw new ArgumentOutOfRangeException(nameof(offset));
+            return memory.Slice(offsetI32);
         }
     }
 
